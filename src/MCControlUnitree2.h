@@ -180,10 +180,12 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     [this](const std::string & jn, double & p, double & d) { return getServoGainsByName(jn, p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGains",
-    [this](const std::vector<double> & p, const std::vector<double> & d) { return setServoGains(p, d); });
+    [this](const std::vector<double> & p, const std::vector<double> & d) { mc_rtc::log::info("[mc_unitree] Tentatiive Setting PD gains for robot"); return setServoGains(p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGainsByName",
     [this](const std::string & jn, double p, double d) { return setServoGainsByName(jn, p, d); });
+
+  mc_rtc::log::info("[mc_unitree] Interface created for robot {}", robot_name);
   
   /* Run QP (every timestep ms) and send result joint commands to the robot */
   now_ = std::chrono::high_resolution_clock::now();
@@ -195,7 +197,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     controller.controller().gui()->addElement(
         {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { controller.running = false; }));
 
-    controller.controller().logger().addLogEntry("tesst", this, [&]() {return std::string("test");});
+    // controller.controller().logger().addLogEntry("tesst", this, [&]() {return std::string("test");});
     addLogEntryRobotInfo();
 
     controller.running = true;
@@ -398,7 +400,11 @@ template <typename RobotControl, typename RobotSensorInfo, typename RobotCommand
   /* Torque values */
   globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_torque", [this]() { return robot_->getCommand().tauOut_; });
 
-  mc_rtc::log::success("Entries added to loggeer");
+  /* PD gains */
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_kp", [this]() { return robot_->getCommand().kpOut_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_kd", [this]() { return robot_->getCommand().kdOut_; });
+
+  mc_rtc::log::success("Entries added to logger");
 }
   
 } // namespace mc_unitree

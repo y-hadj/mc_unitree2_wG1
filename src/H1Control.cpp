@@ -1,4 +1,5 @@
 
+#include <mc_control/mc_global_controller.h>
 #include <mc_rtc/logging.h>
 #include "H1Control.h"
 
@@ -16,17 +17,84 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
 {
   std::cout << "number of joints = " << robot_->refJointOrder().size() << std::endl;
   std::cout << "control dt = " << control_dt_ << std::endl;
+
+  mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
+  if(!gconfig.config.has("Unitree"))
+  {
+    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration");
+  }
+  auto unitree_config = gconfig.config("Unitree");
+  if(!unitree_config.has("h1"))
+  {
+    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree H1 configuration");
+  }
+  auto h1_config = unitree_config("h1");
   
   // q_init, q_lim_lower, q_lim_upper will be overwritten by definition in mc_h1 and urdf
-  q_init_ = config_param.q_init_;
-  q_lim_lower_ = config_param.q_lim_lower_;
-  q_lim_upper_ = config_param.q_lim_upper_;
-  kp_ = config_param.kp_;
-  kd_ = config_param.kd_;
-  kp_wait_ = config_param.kp_stand_;
-  kd_wait_ = config_param.kd_stand_;
-  tau_ff_ = config_param.tau_ff_;
-  
+  if(h1_config.has("q_init"))
+  {
+    Eigen::VectorXd q_init = h1_config("q_init");
+    if(q_init.size() != 20) q_init_ = config_param.q_init_;
+    else q_init_ = q_init.cast<float>();
+  }
+  else q_init_ = config_param.q_init_;
+
+  if(h1_config.has("q_lim_lower"))
+  {
+    Eigen::VectorXd q_lim_lower = h1_config("q_lim_lower");
+    if(q_lim_lower.size() != 20) q_lim_lower_ = config_param.q_lim_lower_;
+    else q_lim_lower_ = q_lim_lower.cast<float>();
+  }
+  else q_lim_lower_ = config_param.q_lim_lower_;
+
+  if(h1_config.has("q_lim_upper"))
+  {
+    Eigen::VectorXd q_lim_upper = h1_config("q_lim_upper");
+    if(q_lim_upper.size() != 20) q_lim_upper_ = config_param.q_lim_upper_;
+    else q_lim_upper_ = q_lim_upper.cast<float>();
+  }
+  else q_lim_upper_ = config_param.q_lim_upper_;
+
+  if(h1_config.has("kp"))
+  {
+    Eigen::VectorXd kp = h1_config("kp");
+    if(kp.size() != 20) kp_ = config_param.kp_;
+    else kp_ = kp.cast<float>();
+  }
+  else kp_ = config_param.kp_;
+
+  if(h1_config.has("kd"))
+  {
+    Eigen::VectorXd kd = h1_config("kd");
+    if(kd.size() != 20) kd_ = config_param.kd_;
+    else kd_ = kd.cast<float>();
+  }
+  else kd_ = config_param.kd_;
+
+  if(h1_config.has("kp_wait"))
+  {
+    Eigen::VectorXd kp_wait = h1_config("kp_wait");
+    if(kp_wait.size() != 20) kp_wait_ = config_param.kp_stand_;
+    else kp_wait_ = kp_wait.cast<float>();
+  }
+  else kp_wait_ = config_param.kp_stand_;
+
+  if(h1_config.has("kd_wait"))
+  {
+    Eigen::VectorXd kd_wait = h1_config("kd_wait");
+    if(kd_wait.size() != 20) kd_wait_ = config_param.kd_stand_;
+    else kd_wait_ = kd_wait.cast<float>();
+  }
+  else kd_wait_ = config_param.kd_stand_;
+
+  if(h1_config.has("tau_ff"))
+  {
+    Eigen::VectorXd tau_ff = h1_config("tau_ff");
+    if(tau_ff.size() != 20) tau_ff_ = config_param.tau_ff_;
+    else tau_ff_ = tau_ff.cast<float>();
+  }
+  else tau_ff_ = config_param.tau_ff_;
+
   stateIn_.qIn_.resize(robot->refJointOrder().size(), 0.0);
   stateIn_.dqIn_.resize(robot->refJointOrder().size(), 0.0);
   stateIn_.tauIn_.resize(robot->refJointOrder().size(), 0.0);
@@ -44,6 +112,9 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
   {
     cmdOut_.kpOut_[i] = kp_[i];
     cmdOut_.kdOut_[i] = kd_[i];
+    // std::cout << "Joint " << robot_->refJointOrder()[i] << ": kp " << cmdOut_.kpOut_[i]
+    //           << ", kd " << cmdOut_.kdOut_[i] << std::endl;
+    // std::cout << "config param " <<
   }
   
   refJointOrderToMCJointId_.resize(kNumMotors, -1);
@@ -59,18 +130,30 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     
     q_lim_lower_(i) = robot->ql().at(mcJointId)[0];
     q_lim_upper_(i) = robot->qu().at(mcJointId)[0];
-    
-    /* Overrite initial q_init_ if stance is set */
-    if(robot->stance().count(jname))
+    q_dot_lim_lower_(i) = robot->vl().at(mcJointId)[0];
+    q_dot_lim_upper_(i) = robot->vu().at(mcJointId)[0];
+
+    /* Overrite initial q_init_ if stance is set and not provided by the config file */
+    if(robot->stance().count(jname) && !h1_config.has("q_init"))
     {
       q_init_(i) = robot->stance().at(jname)[0];
     }
   }
-  
-  if (!config_param.network_.empty())
+
+  std::string network = config_param.network_;
+  if(h1_config.has("network-interface"))
   {
+    network.assign(h1_config("network-interface"));
+  }
+
+  if (!network.empty())
+  {
+    int simulation = 1;
+    if(network != "lo") simulation = 0;
+    mc_rtc::log::info("[mc_unitree] H1Control: Using network setting: {}", network);
+
     /* Initialize */
-    unitree::robot::ChannelFactory::Instance()->Init(0, config_param.network_);
+    unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
     std::cout << "Initialize channel factory." << std::endl;
     
     lowcmd_publisher_.reset(
@@ -255,7 +338,7 @@ void H1Control::ReportSensors()
 void H1Control::UpdateTables(bool init)
 {
   // Clear the console
-  std::cout << u8"\033[2J";
+  // std::cout << u8"\033[2J";
   
   if (init)
   {
@@ -502,9 +585,9 @@ void H1Control::UpdateTables(bool init)
     std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
     break;
   case STATUS_RUN:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Running Controller    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
+    // std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
+    // std::cout << "    ┃    Running Controller    ┃" << std::endl;
+    // std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
     break;
   case STATUS_DAMPING:
     std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
@@ -512,16 +595,17 @@ void H1Control::UpdateTables(bool init)
     std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
     break;
   }
-  std::cout << "    ┏━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-  std::cout << "    ┃    Sensor Data    ┃" << std::endl;
-  std::cout << "    ┗━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-  std::cout << table_IMU_.to_string() << std::endl;
-  std::cout << table_legs_cmd_.to_string() << std::endl;
-  std::cout << table_legs_.to_string() << std::endl;
-  std::cout << table_arms_cmd_.to_string() << std::endl;
-  std::cout << table_arms_.to_string() << std::endl;
-  std::cout << table_misc_.to_string() << std::endl;
-  std::cout << "Time: " << time_ << std::endl;
+  // mc_rtc::log::info("Gains: kp: {}, kd: {}", kp_.transpose(), kd_.transpose());
+  // std::cout << "    ┏━━━━━━━━━━━━━━━━━━━┓" << std::endl;
+  // std::cout << "    ┃    Sensor Data    ┃" << std::endl;
+  // std::cout << "    ┗━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
+  // std::cout << table_IMU_.to_string() << std::endl;
+  // std::cout << table_legs_cmd_.to_string() << std::endl;
+  // std::cout << table_legs_.to_string() << std::endl;
+  // std::cout << table_arms_cmd_.to_string() << std::endl;
+  // std::cout << table_arms_.to_string() << std::endl;
+  // std::cout << table_misc_.to_string() << std::endl;
+  // std::cout << "Time: " << time_ << std::endl;
 }
 
 void H1Control::Control()
@@ -571,33 +655,12 @@ void H1Control::Control()
   }
   
   // Check if joints are too close from position limits
-  const bool lim_lower = ((q_pos - 0.85 * q_lim_lower_).array() < 0.0).any();
-  const bool lim_upper = ((q_pos - 0.85 * q_lim_upper_).array() > 0.0).any();
-  if (lim_lower || lim_upper)
-  {
-    if (lim_lower)
-    {
-      std::cout << "Joint lower limit breached!!!" << std::endl;
-      std::cout << "POS: " << std::fixed << std::setprecision(4) << q_pos.transpose() << std::endl;
-      std::cout << "LIM: " << std::fixed << std::setprecision(4) << (0.85 * q_lim_lower_).transpose() << std::endl;
-    }
-    if (lim_upper)
-    {
-      std::cout << "Joint upper limit breached!!!" << std::endl;
-      std::cout << "POS: " << std::fixed << std::setprecision(4) << q_pos.transpose() << std::endl;
-      std::cout << "LIM: " << std::fixed << std::setprecision(4) << (0.85 * q_lim_upper_).transpose() << std::endl;
-    }
-    status_ = STATUS_DAMPING;
-  }
-  
-  // Check if joint velocities are too high
-  const bool lim_velocity = ((q_vel.array().abs() - 8) > 0.0).any();
-  if (lim_velocity)
-  {
-    std::cout << "Velocity threshold breached!!!" << std::endl;
-    std::cout << "VEL: " << std::fixed << std::setprecision(4) << q_vel.transpose() << std::endl;
-    status_ = STATUS_DAMPING;
-  }
+  // const bool lim_lower = ((q_pos - 0.85 * q_lim_lower_).array() < 0.0).any();
+  // const bool lim_upper = ((q_pos - 0.85 * q_lim_upper_).array() > 0.0).any();
+  const bool lim_lower = ((q_pos - q_lim_lower_).array() < 0.0).any();
+  const bool lim_upper = ((q_pos - q_lim_upper_).array() > 0.0).any();
+  const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
+  const bool lim_velocity_upper = ((q_vel - q_dot_lim_upper_).array() > 0.0).any();
   
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))
@@ -611,6 +674,35 @@ void H1Control::Control()
   {
   case STATUS_RUN:
   {
+    if (lim_lower || lim_upper)// || lim_velocity_lower || lim_velocity_upper)
+    {
+      if (lim_lower)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint lower limit breached!!!");
+        mc_rtc::log::error("[mc_unitree] POS: {}", q_pos.transpose());
+        mc_rtc::log::error("[mc_unitree] LIM: {}", q_lim_lower_.transpose());
+      }
+      if (lim_upper)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint upper limit breached!!!");
+        mc_rtc::log::error("[mc_unitree] POS: {}", q_pos.transpose());
+        mc_rtc::log::error("[mc_unitree] LIM: {}", q_lim_upper_.transpose());
+      }
+      if(lim_velocity_lower)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint lower velocity limit breached!!!");
+        mc_rtc::log::error("[mc_unitree] VEL: {}", q_vel.transpose());
+        mc_rtc::log::error("[mc_unitree] VEL LIM: {}", q_dot_lim_lower_.transpose());
+      }
+      if(lim_velocity_upper)
+      {
+        mc_rtc::log::error("[mc_unitree] Joint upper velocity limit breached!!!");
+        mc_rtc::log::error("[mc_unitree] VEL: {}", q_vel.transpose());
+        mc_rtc::log::error("[mc_unitree] VEL LIM: {}", q_dot_lim_upper_.transpose());
+      }
+      status_ = STATUS_DAMPING;
+    }
+
     time_run_ += control_dt_;
     
     mc_controller_->run(stateIn_, cmdOut_);
@@ -623,7 +715,7 @@ void H1Control::Control()
       motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
       motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
       motor_command_tmp.dq_ref.at(motorId) = cmdOut_.dqOut_[i];
-      motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
+      // motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
     }
     break;
   }

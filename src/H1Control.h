@@ -38,7 +38,7 @@ using Vector20 = Eigen::Matrix<float, 20, 1>;
 namespace mc_unitree
 {
   const std::string ROBOT_NAME = "h1";
-  const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc.yaml";
+  // const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc.yaml";
   
   const int jointIdsToMotorIds[20] =
     {JointIndex::kLeftHipYaw,
@@ -102,19 +102,29 @@ struct H1ConfigParameter
   
   // This can be overwritten defined in mc_rtc.yaml
   // Proportional derivative gains
+  // Vector20 kp_{
+  //   100.0, 100.0, 100.0, 100.0, 20.0,
+  //   100.0, 100.0, 100.0, 100.0, 20.0, // Legs
+  //   300.0, 100.0, 100.0, 100.0, 100.0,
+  //   100.0, 100.0, 100.0, 100.0, // Torso and arms
+  //   0.0};                       // Unused joint
   Vector20 kp_{
-    100.0, 100.0, 100.0, 100.0, 20.0,
-    100.0, 100.0, 100.0, 100.0, 20.0, // Legs
-    300.0, 100.0, 100.0, 100.0, 100.0,
-    100.0, 100.0, 100.0, 100.0, // Torso and arms
-    0.0};                       // Unused joint
+    1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
+         1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
+         200.0, 200.0, 100.0, 100.0, 200.0,
+         200.0, 100.0, 100.0, 200.0, 0.0};
   
+  // Vector20 kd_{
+  //   10.0, 10.0, 10.0, 10.0, 4.0,
+  //   10.0, 10.0, 10.0, 10.0, 4.0, // Legs
+  //   6.0,  2.0,  2.0,  2.0,  2.0,
+  //   2.0,  2.0,  2.0,  2.0, // Torso and arms
+  //   0.0}; 
   Vector20 kd_{
-    10.0, 10.0, 10.0, 10.0, 4.0,
-    10.0, 10.0, 10.0, 10.0, 4.0, // Legs
-    6.0,  2.0,  2.0,  2.0,  2.0,
-    2.0,  2.0,  2.0,  2.0, // Torso and arms
-    0.0}; 
+    25.0, 25.0, 25.0, 25.0, 5.0,
+         25.0, 25.0, 25.0, 25.0, 5.0,
+          6.0,  2.0,  2.0,  2.0, 2.0,
+          2.0,  2.0,  2.0,  2.0, 0.0};
   
   Vector20 kp_stand_{
     1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
@@ -220,6 +230,8 @@ private:
   Vector20 q_init_;
   Vector20 q_lim_lower_;
   Vector20 q_lim_upper_;
+  Vector20 q_dot_lim_lower_;
+  Vector20 q_dot_lim_upper_;
   Vector20 kp_;  
   Vector20 kd_;
   Vector20 kp_wait_;
@@ -310,14 +322,14 @@ public:
   const Vector20 & kp() const { return kp_; }
   
   float kp(int i) { return kp_[i]; }
-  
-  void setKp(int i, float kp) { kp_[i] = kp; }
-  
+
+  void setKp(int i, float kp) { kp_[i] = kp; cmdOut_.kpOut_[i] = kp; }
+
   const Vector20 & kd() const { return kd_; }
   
   float kd(int i) { return kd_[i]; }
-  
-  void setKd(int i, float kd) { kd_[i] = kd; }
+
+  void setKd(int i, float kd) { kd_[i] = kd; cmdOut_.kdOut_[i] = kd; }
   
   const std::vector<int> & refJointOrderToMCJointId() const { return refJointOrderToMCJointId_; }
   

@@ -4,8 +4,10 @@
 
 #include <fstream>
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 
 namespace po = boost::program_options;
+namespace bfs = boost::filesystem;
 
 namespace
 {
@@ -29,8 +31,10 @@ int main(int argc, char * argv[])
   std::string network;
   po::options_description desc(std::string("MCControlH1 options"));
   
-  // Get the configuration file path dedicated to this program
-  std::string check_file = mc_unitree::CONFIGURATION_FILE;
+  bfs::path config_path = mc_rtc::user_config_directory_path("mc_rtc.conf");
+  // Load user's local configuration if it exists
+  if(!bfs::exists(config_path)) { config_path.replace_extension(".yaml"); }
+  std::string check_file = config_path.string();
   if(!file_exists(check_file))
   {
     check_file = "";
@@ -39,7 +43,7 @@ int main(int argc, char * argv[])
   // clang-format off
   desc.add_options()
     ("help", "display help message")
-    ("network,n", po::value<std::string>(&network)->default_value("eth0"), "name of network adaptor")
+    ("network,n", po::value<std::string>(&network)->default_value("lo"), "name of network adaptor")
     ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
   // clang-format on
   
