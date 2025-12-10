@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <string>
 #include <thread>
 #include <Eigen/Core>
 #include <vector>
@@ -38,7 +39,6 @@ using Vector20 = Eigen::Matrix<float, 20, 1>;
 namespace mc_unitree
 {
   const std::string ROBOT_NAME = "h1";
-  // const std::string CONFIGURATION_FILE = "/usr/local/etc/mc_unitree/mc_rtc.yaml";
   
   const int jointIdsToMotorIds[20] =
     {JointIndex::kLeftHipYaw,
@@ -74,52 +74,43 @@ struct H1ConfigParameter
   /* Communication information with a real robot */
   /* Connection network */
   std::string network_;
-  /* ControlMode : Position/Velocity/Torque (Velocity and Torque are not supported)*/
+  /* ControlMode : Position/Velocity/Torque (Velocity is not supported)*/
   ControlMode mode_ = ControlMode::Position;
   
-    // Default configuration
-  // This will be overwritten by stance defined in mc_h1
+  // Default configuration
   Vector20 q_init_{
     0.0, 0.0, -0.2,  0.6, -0.4,
     0.0, 0.0, -0.2,  0.6, -0.4, // Legs
     0.0, 0.4,  0.0,  0.0, -0.4,
     0.4, 0.0,  0.0, -0.4,       // Torso and arms
     0.0};                       // Unused joint
-  // This will be overwritten by definition in urdf
+
+  // Limits defined by Unitree
   Vector20 q_lim_lower_{
     -0.43, -0.43, -3.14, -0.26, -0.87,
     -0.43, -0.43, -3.14, -0.26, -0.87, // Legs
     -2.35, -2.87, -0.34, -1.3,  -1.25,
     -2.87, -3.11, -4.45, -1.25, // Torso and arms
     0.0};                       // Unused joint
-  // This will be overwritten by definition in urdf
   Vector20 q_lim_upper_{
     0.43, 0.43, 2.53, 2.05, 0.52,
     0.43, 0.43, 2.53, 2.05, 0.52, // Legs
     2.35, 2.87, 3.11, 4.45, 2.61,
     2.87, 0.34, 1.3,  2.61, // Torso and arms
     0.0};                   // Unused joint
+  Vector20 qdot_lim_{
+    23.0, 23.0, 23.0, 14.0, 9.0,
+    23.0, 23.0, 23.0, 14.0, 9.0, // Legs
+    23.0, 9.0, 9.0, 9.0, 20.0,
+    9.0, 9.0, 9.0, 20.0, // Torso and arms
+    0.0};                   // Unused joint
   
-  // This can be overwritten defined in mc_rtc.yaml
-  // Proportional derivative gains
-  // Vector20 kp_{
-  //   100.0, 100.0, 100.0, 100.0, 20.0,
-  //   100.0, 100.0, 100.0, 100.0, 20.0, // Legs
-  //   300.0, 100.0, 100.0, 100.0, 100.0,
-  //   100.0, 100.0, 100.0, 100.0, // Torso and arms
-  //   0.0};                       // Unused joint
   Vector20 kp_{
     1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
          1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
          200.0, 200.0, 100.0, 100.0, 200.0,
          200.0, 100.0, 100.0, 200.0, 0.0};
   
-  // Vector20 kd_{
-  //   10.0, 10.0, 10.0, 10.0, 4.0,
-  //   10.0, 10.0, 10.0, 10.0, 4.0, // Legs
-  //   6.0,  2.0,  2.0,  2.0,  2.0,
-  //   2.0,  2.0,  2.0,  2.0, // Torso and arms
-  //   0.0}; 
   Vector20 kd_{
     25.0, 25.0, 25.0, 25.0, 5.0,
          25.0, 25.0, 25.0, 25.0, 5.0,
@@ -141,8 +132,8 @@ struct H1ConfigParameter
     0.0};                  // Unused joint
   
   Vector20 tau_ff_{
-    0.0,  6.0, -8.0, -26.0, 36.0,
-    0.0, -6.0, -8.0, -26.0, 36.0,
+    0.0,  0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0,
     0.0,  0.0,  0.0,  0.0,  0.0,
     0.0,  0.0,  0.0,  0.0,
     0.0};
@@ -208,12 +199,16 @@ protected:
   float control_dt_;
   
   control_status_t status_ = STATUS_INIT;
+  control_status_t prev_status_ = STATUS_RUN;
+
+  ControlMode mode_ = ControlMode::Position;
   
   MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller_ = nullptr;
   
   mc_rbdyn::Robot* robot_ = nullptr;
   
 private:
+  void setControlMode(std::string mode);
   /*publisher*/
   unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::LowCmd_> lowcmd_publisher_;
   /*subscriber*/
@@ -238,6 +233,13 @@ private:
   Vector20 kd_wait_;
   Vector20 tau_ff_;
   std::array<float, kNumMotors> tau_des_ = {};
+
+  std::vector<std::string> joint_names_ = {
+      "left_hip_yaw_joint",        "left_hip_roll_joint",      "left_hip_pitch_joint", "left_knee_joint",
+      "left_ankle_joint",          "right_hip_yaw_joint",      "right_hip_roll_joint", "right_hip_pitch_joint",
+      "right_knee_joint",          "right_ankle_joint",        "torso_joint",          "left_shoulder_pitch_joint",
+      "left_shoulder_roll_joint",  "left_shoulder_yaw_joint",  "left_elbow_joint",     "right_shoulder_pitch_joint",
+      "right_shoulder_roll_joint", "right_shoulder_yaw_joint", "right_elbow_joint", "NULL"};
   
   float time_ = 0.f;
   float time_run_ = 0.f;

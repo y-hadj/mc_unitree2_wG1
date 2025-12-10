@@ -180,7 +180,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     [this](const std::string & jn, double & p, double & d) { return getServoGainsByName(jn, p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGains",
-    [this](const std::vector<double> & p, const std::vector<double> & d) { mc_rtc::log::info("[mc_unitree] Tentatiive Setting PD gains for robot"); return setServoGains(p, d); });
+    [this](const std::vector<double> & p, const std::vector<double> & d) { mc_rtc::log::info("[mc_unitree] Tentative Setting PD gains for robot"); return setServoGains(p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGainsByName",
     [this](const std::string & jn, double p, double d) { return setServoGainsByName(jn, p, d); });
@@ -246,18 +246,29 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
         continue;
       
       auto & robot = globalController_.controller().robots().robot();
+      auto &datastore = globalController_.controller().datastore();
+      if (datastore.has("ControlMode"))
+      {
+        std::string mode = datastore.get<std::string>("ControlMode");
+        if (mode.compare("Position") == 0) {
+          config_param_.mode_ = ControlMode::Position;
+        }
+        if (mode.compare("Torque") == 0) {
+          config_param_.mode_ = ControlMode::Torque;
+        }
+      }
       switch(config_param_.mode_)
       {
-      case mc_unitree::ControlMode::Position:
-        cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Velocity:
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Torque:
-        cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
-        break;
+        case mc_unitree::ControlMode::Position:
+          cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Velocity:
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Torque:
+          cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
+          break;
       }
     }
     

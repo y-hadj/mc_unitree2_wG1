@@ -15,8 +15,8 @@ using namespace mc_unitree;
 H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H1ConfigParameter> * mc_controller, mc_rbdyn::Robot * robot, const H1ConfigParameter & config_param)
   : mc_controller_(mc_controller), robot_(robot), control_dt_(mc_controller->controller().timestep()), config_(config_param)
 {
-  std::cout << "number of joints = " << robot_->refJointOrder().size() << std::endl;
-  std::cout << "control dt = " << control_dt_ << std::endl;
+  mc_rtc::log::info("[mc_unitree] H1 Number of joints: {}", robot_->refJointOrder().size());
+  mc_rtc::log::info("[mc_unitree] H1 Control dt: {}", control_dt_);
 
   mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
   if(!gconfig.config.has("Unitree"))
@@ -54,6 +54,24 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     else q_lim_upper_ = q_lim_upper.cast<float>();
   }
   else q_lim_upper_ = config_param.q_lim_upper_;
+
+  if(h1_config.has("qdot_lim"))
+  {
+    Eigen::VectorXd qdot_lim_upper = h1_config("qdot_lim");
+    Eigen::VectorXd qdot_lim_lower = -1.0 * qdot_lim_upper;
+    if(qdot_lim_upper.size() != 20){
+      q_dot_lim_upper_ = config_param.qdot_lim_;
+      q_dot_lim_lower_ = -1.0 * config_param.qdot_lim_;
+    }
+    else{
+      q_dot_lim_upper_ = qdot_lim_upper.cast<float>();
+      q_dot_lim_lower_ = qdot_lim_lower.cast<float>();
+    }
+  }
+  else {
+    q_dot_lim_lower_ = -1.0 * config_param.qdot_lim_;
+    q_dot_lim_upper_ = config_param.qdot_lim_;
+  }
 
   if(h1_config.has("kp"))
   {
@@ -112,9 +130,6 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
   {
     cmdOut_.kpOut_[i] = kp_[i];
     cmdOut_.kdOut_[i] = kd_[i];
-    // std::cout << "Joint " << robot_->refJointOrder()[i] << ": kp " << cmdOut_.kpOut_[i]
-    //           << ", kd " << cmdOut_.kdOut_[i] << std::endl;
-    // std::cout << "config param " <<
   }
   
   refJointOrderToMCJointId_.resize(kNumMotors, -1);
@@ -127,18 +142,14 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
     
     refJointOrderToMCJointId_[i] = mcJointId;
     mcJointIdToJointId_[mcJointId] = i;
-    
-    q_lim_lower_(i) = robot->ql().at(mcJointId)[0];
-    q_lim_upper_(i) = robot->qu().at(mcJointId)[0];
-    q_dot_lim_lower_(i) = robot->vl().at(mcJointId)[0];
-    q_dot_lim_upper_(i) = robot->vu().at(mcJointId)[0];
-
     /* Overrite initial q_init_ if stance is set and not provided by the config file */
     if(robot->stance().count(jname) && !h1_config.has("q_init"))
     {
       q_init_(i) = robot->stance().at(jname)[0];
     }
   }
+
+  mode_ = config_param.mode_;
 
   std::string network = config_param.network_;
   if(h1_config.has("network-interface"))
@@ -154,7 +165,7 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
 
     /* Initialize */
     unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
-    std::cout << "Initialize channel factory." << std::endl;
+    mc_rtc::log::info("Initialize channel factory.");
     
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_go::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
@@ -302,31 +313,29 @@ void H1Control::ReportSensors()
     motor_state_buffer_.GetData();
   if (bs_tmp_ptr)
   {
-    // Roll Pitch Yaw orientation
-    std::cout << std::setprecision(4) << "rpy: [" << bs_tmp_ptr->rpy.at(0)
-              << ", " << bs_tmp_ptr->rpy.at(1) << ", " << bs_tmp_ptr->rpy.at(2)
-              << "]" << std::endl;
-    // Gyroscope
-    std::cout << std::setprecision(4) << "gyro: [" << bs_tmp_ptr->omega.at(0)
-              << ", " << bs_tmp_ptr->omega.at(1) << ", "
-              << bs_tmp_ptr->omega.at(2) << "]" << std::endl;
-    // Accelerometer
-    std::cout << std::setprecision(4) << "acc: [" << bs_tmp_ptr->acc.at(0)
-              << ", " << bs_tmp_ptr->acc.at(1) << ", " << bs_tmp_ptr->acc.at(2)
-              << "]" << std::endl;
+    mc_rtc::log::info("Base RPY: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->rpy.at(0),
+                      bs_tmp_ptr->rpy.at(1),
+                      bs_tmp_ptr->rpy.at(2));
+
+    mc_rtc::log::info("Gyro: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->omega.at(0),
+                      bs_tmp_ptr->omega.at(1),
+                      bs_tmp_ptr->omega.at(2));
+    mc_rtc::log::info("Accelerometer: [{:.4f}, {:.4f}, {:.4f}]",
+                      bs_tmp_ptr->acc.at(0),
+                      bs_tmp_ptr->acc.at(1),
+                      bs_tmp_ptr->acc.at(2));
   }
   if (ms_tmp_ptr)
   {
-    // Joint positions
-    std::cout << "mot_pos: [";
+    mc_rtc::log::info("Joint positions: [");
     for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
     {
-      std::cout << std::setprecision(4) << ms_tmp_ptr->q.at(jointIdsToMotorIds[i]) << ", ";
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->q.at(jointIdsToMotorIds[i]));
     }
-    std::cout << "]" << std::endl;
-    
-    // Joint velocities
-    std::cout << "mot_vel: [";
+    mc_rtc::log::info("]");
+    mc_rtc::log::info("Joint velocities: [");
     for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
     {
       std::cout << std::setprecision(4) << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]) << ", ";
@@ -561,51 +570,43 @@ void H1Control::UpdateTables(bool init)
     table_misc_[0][2].set_cell_text_align(fort::text_align::center);
     table_misc_[0][3].set_cell_text_align(fort::text_align::center);
   }
-  
-  switch (status_)
+  if(status_ != prev_status_)
   {
-  case STATUS_INIT:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃      Initialization      ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_WAITING_AIR:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Waiting in the air    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_WAITING_GRD:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃   Waiting on the ground  ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_GAIN_TRANSITION:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃   PD Gains Transition    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_RUN:
-    // std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    // std::cout << "    ┃    Running Controller    ┃" << std::endl;
-    // std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
-  case STATUS_DAMPING:
-    std::cout << "    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-    std::cout << "    ┃    Emergency Damping!    ┃" << std::endl;
-    std::cout << "    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-    break;
+    prev_status_ = status_;
+    switch (status_)
+    {
+    case STATUS_INIT:
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃      Initialization      ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    case STATUS_WAITING_AIR:
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃    Waiting in the air    ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    case STATUS_WAITING_GRD:
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃   Waiting on the ground  ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    case STATUS_GAIN_TRANSITION:
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃   PD Gains Transition    ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    case STATUS_RUN:
+      // mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      // mc_rtc::log::info("    ┃    Running Controller    ┃");
+      // mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    case STATUS_DAMPING:
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃    Emergency Damping!    ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      break;
+    }
   }
-  // mc_rtc::log::info("Gains: kp: {}, kd: {}", kp_.transpose(), kd_.transpose());
-  // std::cout << "    ┏━━━━━━━━━━━━━━━━━━━┓" << std::endl;
-  // std::cout << "    ┃    Sensor Data    ┃" << std::endl;
-  // std::cout << "    ┗━━━━━━━━━━━━━━━━━━━┛" << std::endl << std::endl;
-  // std::cout << table_IMU_.to_string() << std::endl;
-  // std::cout << table_legs_cmd_.to_string() << std::endl;
-  // std::cout << table_legs_.to_string() << std::endl;
-  // std::cout << table_arms_cmd_.to_string() << std::endl;
-  // std::cout << table_arms_.to_string() << std::endl;
-  // std::cout << table_misc_.to_string() << std::endl;
-  // std::cout << "Time: " << time_ << std::endl;
 }
 
 void H1Control::Control()
@@ -655,8 +656,6 @@ void H1Control::Control()
   }
   
   // Check if joints are too close from position limits
-  // const bool lim_lower = ((q_pos - 0.85 * q_lim_lower_).array() < 0.0).any();
-  // const bool lim_upper = ((q_pos - 0.85 * q_lim_upper_).array() > 0.0).any();
   const bool lim_lower = ((q_pos - q_lim_lower_).array() < 0.0).any();
   const bool lim_upper = ((q_pos - q_lim_upper_).array() > 0.0).any();
   const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
@@ -674,33 +673,69 @@ void H1Control::Control()
   {
   case STATUS_RUN:
   {
-    if (lim_lower || lim_upper)// || lim_velocity_lower || lim_velocity_upper)
+    if (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper)
     {
+      const int n = joint_names_.size();
+
       if (lim_lower)
       {
-        mc_rtc::log::error("[mc_unitree] Joint lower limit breached!!!");
-        mc_rtc::log::error("[mc_unitree] POS: {}", q_pos.transpose());
-        mc_rtc::log::error("[mc_unitree] LIM: {}", q_lim_lower_.transpose());
+        mc_rtc::log::error("[mc_unitree] Joint lower position limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_pos[i] < q_lim_lower_[i])
+          {
+            mc_rtc::log::error("  - {}: pos = {}, lower limit = {}", 
+                              joint_names_[i], q_pos[i], q_lim_lower_[i]);
+          }
+        }
       }
+
       if (lim_upper)
       {
-        mc_rtc::log::error("[mc_unitree] Joint upper limit breached!!!");
-        mc_rtc::log::error("[mc_unitree] POS: {}", q_pos.transpose());
-        mc_rtc::log::error("[mc_unitree] LIM: {}", q_lim_upper_.transpose());
+        mc_rtc::log::error("[mc_unitree] Joint upper position limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_pos[i] > q_lim_upper_[i])
+          {
+            mc_rtc::log::error("  - {}: pos = {}, upper limit = {}", 
+                              joint_names_[i], q_pos[i], q_lim_upper_[i]);
+          }
+        }
       }
-      if(lim_velocity_lower)
+
+      if (lim_velocity_lower)
       {
-        mc_rtc::log::error("[mc_unitree] Joint lower velocity limit breached!!!");
-        mc_rtc::log::error("[mc_unitree] VEL: {}", q_vel.transpose());
-        mc_rtc::log::error("[mc_unitree] VEL LIM: {}", q_dot_lim_lower_.transpose());
+        mc_rtc::log::error("[mc_unitree] Joint lower velocity limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_vel[i] < q_dot_lim_lower_[i])
+          {
+            mc_rtc::log::error("  - {}: vel = {}, lower vel limit = {}", 
+                              joint_names_[i], q_vel[i], q_dot_lim_lower_[i]);
+          }
+        }
       }
-      if(lim_velocity_upper)
+
+      if (lim_velocity_upper)
       {
-        mc_rtc::log::error("[mc_unitree] Joint upper velocity limit breached!!!");
-        mc_rtc::log::error("[mc_unitree] VEL: {}", q_vel.transpose());
-        mc_rtc::log::error("[mc_unitree] VEL LIM: {}", q_dot_lim_upper_.transpose());
+        mc_rtc::log::error("[mc_unitree] Joint upper velocity limit breached!");
+        for(int i = 0; i < n; ++i)
+        {
+          if(q_vel[i] > q_dot_lim_upper_[i])
+          {
+            mc_rtc::log::error("  - {}: vel = {}, upper vel limit = {}", 
+                              joint_names_[i], q_vel[i], q_dot_lim_upper_[i]);
+          }
+        }
       }
+
       status_ = STATUS_DAMPING;
+    }
+
+    auto &datastore = mc_controller_->controller().controller().datastore();
+    if (datastore.has("ControlMode"))
+    {
+      setControlMode(datastore.get<std::string>("ControlMode"));
     }
 
     time_run_ += control_dt_;
@@ -708,15 +743,32 @@ void H1Control::Control()
     mc_controller_->run(stateIn_, cmdOut_);
     
     // Send commands to the robot
-    for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+    if(mode_ == ControlMode::Position)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = cmdOut_.kpOut_[i];
-      motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
-      motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
-      motor_command_tmp.dq_ref.at(motorId) = cmdOut_.dqOut_[i];
-      // motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
+      for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+      {
+        auto motorId = jointIdsToMotorIds[i];
+        motor_command_tmp.kp.at(motorId) = cmdOut_.kpOut_[i];
+        motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
+        motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
+        motor_command_tmp.dq_ref.at(motorId) = cmdOut_.dqOut_[i];
+        motor_command_tmp.tau_ff.at(motorId) = 0.f;
+      }
+      break;
     }
+    else if(mode_ == ControlMode::Torque)
+    {
+      for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+      {
+        auto motorId = jointIdsToMotorIds[i];
+        motor_command_tmp.kp.at(motorId) = 0.f;
+        motor_command_tmp.kd.at(motorId) = 0.f;
+        motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
+      }
+      break;
+    }
+    mc_rtc::log::error("[mc_unitree] Unknown control mode!");
+    status_ = STATUS_DAMPING;
     break;
   }
   
@@ -745,7 +797,7 @@ void H1Control::Control()
       motor_command_tmp.kd.at(motorId) = kd_wait_(i);
       motor_command_tmp.q_ref.at(motorId) = q_init_(i);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
-      motor_command_tmp.tau_ff.at(motorId) = tau_ff_(i) * 0.0;
+      motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
     break;
   }
@@ -880,3 +932,14 @@ void H1Control::loopbackState(const H1CommandData & data)
       stateIn_.qIn_[i] = robot_->ql()[i][0];
   }
 }
+
+void H1Control::setControlMode(std::string mode) {
+  if (mode.compare("Position") == 0) {
+    mode_ = ControlMode::Position;
+    return;
+  }
+  if (mode.compare("Torque") == 0) {
+   mode_ = ControlMode::Torque;
+   return;
+  }
+} 
