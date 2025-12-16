@@ -658,8 +658,10 @@ void H1Control::Control()
   // Check if joints are too close from position limits
   const bool lim_lower = ((q_pos - q_lim_lower_).array() < 0.0).any();
   const bool lim_upper = ((q_pos - q_lim_upper_).array() > 0.0).any();
-  const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
-  const bool lim_velocity_upper = ((q_vel - q_dot_lim_upper_).array() > 0.0).any();
+  // const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
+  // const bool lim_velocity_upper = ((q_vel - q_dot_lim_upper_).array() > 0.0).any();
+  const bool lim_velocity_lower = false;
+  const bool lim_velocity_upper = false;
   
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))
@@ -673,10 +675,11 @@ void H1Control::Control()
   {
   case STATUS_RUN:
   {
+    // If limits are breached, go to damping mode
     if (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper)
     {
-      const int n = joint_names_.size();
 
+      const int n = joint_names_.size();
       if (lim_lower)
       {
         mc_rtc::log::error("[mc_unitree] Joint lower position limit breached!");
@@ -739,7 +742,7 @@ void H1Control::Control()
     }
 
     time_run_ += control_dt_;
-    
+
     mc_controller_->run(stateIn_, cmdOut_);
     
     // Send commands to the robot
