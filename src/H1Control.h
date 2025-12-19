@@ -257,14 +257,6 @@ private:
 #endif
   unitree::common::ThreadPtr report_sensor_ptr_;
   
-  // Table for console display
-  fort::char_table table_IMU_;
-  fort::char_table table_legs_;
-  fort::char_table table_arms_;
-  fort::char_table table_misc_;
-  fort::char_table table_legs_cmd_;
-  fort::char_table table_arms_cmd_;
-  
   /* Control loop status */
   bool running_ = false;
   /* Current sensor values information */

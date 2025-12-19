@@ -338,238 +338,14 @@ void H1Control::ReportSensors()
     mc_rtc::log::info("Joint velocities: [");
     for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
     {
-      std::cout << std::setprecision(4) << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]) << ", ";
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]));
     }
-    std::cout << "]" << std::endl;
+    mc_rtc::log::info("]");
   }
 }
 
 void H1Control::UpdateTables(bool init)
 {
-  // Clear the console
-  // std::cout << u8"\033[2J";
-  
-  if (init)
-  {
-    // Set tables border style
-    table_IMU_.set_border_style(FT_NICE_STYLE);
-    table_legs_.set_border_style(FT_NICE_STYLE);
-    table_legs_cmd_.set_border_style(FT_NICE_STYLE);
-    table_arms_.set_border_style(FT_NICE_STYLE);
-    table_arms_cmd_.set_border_style(FT_NICE_STYLE);
-    table_misc_.set_border_style(FT_NICE_STYLE);
-    
-    // Initialize headers
-    table_IMU_.set_cur_cell(0, 0);
-    table_legs_.set_cur_cell(0, 0);
-    table_legs_cmd_.set_cur_cell(0, 0);
-    table_arms_.set_cur_cell(0, 0);
-    table_arms_cmd_.set_cur_cell(0, 0);
-    table_misc_.set_cur_cell(0, 0);
-    table_IMU_ << fort::header << ""
-               << "X"
-               << "Y"
-               << "Z" << fort::endr;
-    table_legs_ << fort::header << ""
-                << "L Yaw"
-                << "L Roll"
-                << "L Pitch"
-                << "L Knee"
-                << "L Ank";
-    table_legs_ << "R Yaw"
-                << "R Roll"
-                << "R Pitch"
-                << "R Knee"
-                << "R Ank" << fort::endr;
-    table_legs_cmd_ << fort::header << ""
-                    << "L Yaw"
-                    << "L Roll"
-                    << "L Pitch"
-                    << "L Knee"
-                    << "L Ank";
-    table_legs_cmd_ << "R Yaw"
-                    << "R Roll"
-                    << "R Pitch"
-                    << "R Knee"
-                    << "R Ank" << fort::endr;
-    table_arms_ << fort::header << ""
-                << "L Pitch"
-                << "L Roll"
-                << "L Yaw"
-                << "L Elbow";
-    table_arms_ << "R Pitch"
-                << "R Roll"
-                << "R Yaw"
-                << "R Elbow" << fort::endr;
-    table_arms_cmd_ << fort::header << ""
-                    << "L Pitch"
-                    << "L Roll"
-                    << "L Yaw"
-                    << "L Elbow";
-    table_arms_cmd_ << "R Pitch"
-                    << "R Roll"
-                    << "R Yaw"
-                    << "R Elbow" << fort::endr;
-    table_misc_ << fort::header << ""
-                << "VX"
-                << "VY"
-                << "WZ" << fort::endr;
-  }
-  
-  // Fill tables with data
-  const std::shared_ptr<const BaseState> bs_tmp_ptr =
-    base_state_buffer_.GetData();
-  const std::shared_ptr<const MotorState> ms_tmp_ptr =
-    motor_state_buffer_.GetData();
-  
-  // Set current cell to start of second row
-  table_IMU_.set_cur_cell(1, 0);
-  table_legs_.set_cur_cell(1, 0);
-  table_legs_cmd_.set_cur_cell(1, 0);
-  table_arms_.set_cur_cell(1, 0);
-  table_arms_cmd_.set_cur_cell(1, 0);
-  table_misc_.set_cur_cell(1, 0);
-  
-  // Fill IMU data
-  if (bs_tmp_ptr)
-  {
-    table_IMU_ << "RPY";
-    for (int i = 0; i < 3; ++i)
-    {
-      table_IMU_ << std::fixed << std::setprecision(4) << bs_tmp_ptr->rpy.at(i);
-    }
-    table_IMU_ << fort::endr << fort::separator << "Gyro";
-    for (int i = 0; i < 3; ++i)
-    {
-      table_IMU_ << std::fixed << std::setprecision(4)
-                 << bs_tmp_ptr->omega.at(i);
-    }
-    table_IMU_ << fort::endr << fort::separator << "Acc";
-    for (int i = 0; i < 3; ++i)
-    {
-      table_IMU_ << std::fixed << std::setprecision(4) << bs_tmp_ptr->acc.at(i);
-    }
-  }
-  
-  // Fill joint data
-  if (ms_tmp_ptr) {
-    table_legs_ << "Pos";
-    for (int i = 0; i < 10; ++i) {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->q.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_ << fort::endr << fort::separator << "Vel";
-    for (int i = 0; i < 10; ++i) {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_ << fort::endr << fort::separator << "Torques";
-    for (int i = 0; i < 10; ++i) {
-      table_legs_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->tau.at(jointIdsToMotorIds[i]); // tau_des_[i];
-    }
-    table_legs_ << fort::endr;
-
-    table_arms_ << "Pos";
-    for (int i = 11; i < 19; ++i)
-    {
-      table_arms_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->q.at(jointIdsToMotorIds[i]);
-    }
-    table_arms_ << fort::endr << fort::separator << "Vel";
-    for (int i = 11; i < 19; ++i)
-    {
-      table_arms_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]);
-    }
-    table_arms_ << fort::endr << fort::separator << "Torques";
-    for (int i = 11; i < 19; ++i)
-    {
-      table_arms_ << std::fixed << std::setprecision(4)
-                  << ms_tmp_ptr->tau.at(jointIdsToMotorIds[i]); // tau_des_[i];
-    }
-    table_arms_ << fort::endr;
-  }
-  
-  const std::shared_ptr<const MotorCommand> mc_tmp_ptr =
-    motor_command_buffer_.GetData();
-  if (mc_tmp_ptr)
-  {
-    table_legs_cmd_ << "PosCmd";
-    for (int i = 0; i < 10; ++i) {
-      table_legs_cmd_ << std::fixed << std::setprecision(4)
-                      << mc_tmp_ptr->q_ref.at(jointIdsToMotorIds[i]);
-    }
-    table_legs_cmd_ << fort::endr;
-    
-    table_arms_cmd_ << "PosCmd";
-    for (int i = 11; i < 19; ++i)
-    {
-      table_arms_cmd_ << std::fixed << std::setprecision(4)
-                      << mc_tmp_ptr->q_ref.at(jointIdsToMotorIds[i]);
-    }
-    table_arms_cmd_ << fort::endr;
-  }
-  
-  if (init)
-  {
-    // Set text style
-    table_IMU_.row(0).set_cell_content_text_style(fort::text_style::bold);
-    table_IMU_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_legs_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_legs_cmd_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_arms_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_arms_cmd_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    table_misc_.row(0).set_cell_content_text_style(fort::text_style::bold);
-    table_misc_.column(0).set_cell_content_text_style(fort::text_style::bold);
-    
-    // Set alignment
-    table_IMU_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 4; ++i)
-    {
-      table_IMU_.column(i).set_cell_text_align(fort::text_align::right);
-      table_IMU_.column(i).set_cell_min_width(9);
-    }
-    table_IMU_[0][1].set_cell_text_align(fort::text_align::center);
-    table_IMU_[0][2].set_cell_text_align(fort::text_align::center);
-    table_IMU_[0][3].set_cell_text_align(fort::text_align::center);
-    
-    table_legs_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 11; ++i)
-    {
-      table_legs_.column(i).set_cell_text_align(fort::text_align::right);
-      table_legs_.column(i).set_cell_min_width(9);
-    }
-    table_legs_cmd_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 11; ++i)
-    {
-      table_legs_cmd_.column(i).set_cell_text_align(fort::text_align::right);
-      table_legs_cmd_.column(i).set_cell_min_width(9);
-    }
-    
-    table_arms_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 11; ++i)
-    {
-      table_arms_.column(i).set_cell_text_align(fort::text_align::right);
-      table_arms_.column(i).set_cell_min_width(9);
-    }
-    table_arms_cmd_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 11; ++i)
-    {
-      table_arms_cmd_.column(i).set_cell_text_align(fort::text_align::right);
-      table_arms_cmd_.column(i).set_cell_min_width(9);
-    }
-    
-    table_misc_.column(0).set_cell_text_align(fort::text_align::center);
-    for (int i = 1; i < 4; ++i)
-    {
-      table_misc_.column(i).set_cell_text_align(fort::text_align::right);
-      table_misc_.column(i).set_cell_min_width(9);
-    }
-    table_misc_[0][1].set_cell_text_align(fort::text_align::center);
-    table_misc_[0][2].set_cell_text_align(fort::text_align::center);
-    table_misc_[0][3].set_cell_text_align(fort::text_align::center);
-  }
   if(status_ != prev_status_)
   {
     prev_status_ = status_;
@@ -596,9 +372,9 @@ void H1Control::UpdateTables(bool init)
       mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
       break;
     case STATUS_RUN:
-      // mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
-      // mc_rtc::log::info("    ┃    Running Controller    ┃");
-      // mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
+      mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
+      mc_rtc::log::info("    ┃    Running Controller    ┃");
+      mc_rtc::log::info("    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛");
       break;
     case STATUS_DAMPING:
       mc_rtc::log::info("    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓");
@@ -658,10 +434,8 @@ void H1Control::Control()
   // Check if joints are too close from position limits
   const bool lim_lower = ((q_pos - q_lim_lower_).array() < 0.0).any();
   const bool lim_upper = ((q_pos - q_lim_upper_).array() > 0.0).any();
-  // const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
-  // const bool lim_velocity_upper = ((q_vel - q_dot_lim_upper_).array() > 0.0).any();
-  const bool lim_velocity_lower = false;
-  const bool lim_velocity_upper = false;
+  const bool lim_velocity_lower = ((q_vel - q_dot_lim_lower_).array() < 0.0).any();
+  const bool lim_velocity_upper = ((q_vel - q_dot_lim_upper_).array() > 0.0).any();
   
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))

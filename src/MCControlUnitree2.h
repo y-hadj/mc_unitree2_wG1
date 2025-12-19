@@ -112,59 +112,48 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     mc_rtc::log::info("[mc_unitree] Running simulation only. No connection to real robot");
   }
   
-  if(!config_robot.has("kp"))
+  if(config_robot.has("kp") && config_robot("kp").size() != config_param_.kp_.size())
   {
     std::vector<double> kp;
     config_robot("kp", kp);
-    
-    if (kp.size() != config_param_.kp_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kp {} != {}",
-                         kp.size(), config_param_.kp_.size());
-    }
+
+    mc_rtc::log::error("[mc_unitree] Wrong size of kp {} != {}, using default kp",
+                        kp.size(), config_param_.kp_.size());
     
     for (size_t i = 0 ; i < kp.size() ; i++)
       config_param_.kp_(i) = kp[i];
   }
-  if(!config_robot.has("kd"))
+
+  if(config_robot.has("kd") && config_robot("kd").size() != config_param_.kd_.size())
   {
     std::vector<double> kd;
     config_robot("kd", kd);
 
-    if (kd.size() != config_param_.kd_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kd {} != {}",
+    mc_rtc::log::error("[mc_unitree] Wrong size of kd {} != {}, using default kd",
                          kd.size(), config_param_.kd_.size());
-    }
     
     for (size_t i = 0 ; i < kd.size() ; i++)
       config_param_.kd_(i) = kd[i];
   }
-  if(!config_robot.has("kp_wait"))
+  if(config_robot.has("kp_wait") && config_robot("kp_wait").size() != config_param_.kp_stand_.size())
   {
     std::vector<double> kp;
     config_robot("kp_wait", kp);
     
-    if (kp.size() != config_param_.kp_stand_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kp_wait {} != {}",
-                         kp.size(), config_param_.kp_stand_.size());
-    }
+    mc_rtc::log::error("[mc_unitree] Wrong size of kp_wait {} != {}, using default kp_wait",
+                        kp.size(), config_param_.kp_stand_.size());
     
     for (size_t i = 0 ; i < kp.size() ; i++)
       config_param_.kp_stand_(i) = kp[i];
   }
-  if(!config_robot.has("kd_wait"))
+  if(config_robot.has("kd_wait") && config_robot("kd_wait").size() != config_param_.kd_stand_.size())
   {
     std::vector<double> kd;
     config_robot("kd_wait", kd);
-
-    if (kd.size() != config_param_.kd_stand_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kd_wait {} != {}",
-                         kd.size(), config_param_.kd_stand_.size());
-    }
     
+    mc_rtc::log::error("[mc_unitree] Wrong size of kd_wait {} != {}, using default kd_wait",
+                        kd.size(), config_param_.kd_stand_.size());
+
     for (size_t i = 0 ; i < kd.size() ; i++)
       config_param_.kd_stand_(i) = kd[i];
   }
@@ -180,7 +169,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     [this](const std::string & jn, double & p, double & d) { return getServoGainsByName(jn, p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGains",
-    [this](const std::vector<double> & p, const std::vector<double> & d) { mc_rtc::log::info("[mc_unitree] Tentative Setting PD gains for robot"); return setServoGains(p, d); });
+    [this](const std::vector<double> & p, const std::vector<double> & d) { return setServoGains(p, d); });
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGainsByName",
     [this](const std::string & jn, double p, double d) { return setServoGainsByName(jn, p, d); });
@@ -239,6 +228,17 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   {
     /* Update control value from the data in a robot */
     auto jsize = globalController_.controller().robots().robot().refJointOrder().size();
+    auto &datastore = globalController_.controller().datastore();
+    if (datastore.has("ControlMode"))
+    {
+      std::string mode = datastore.get<std::string>("ControlMode");
+      if (mode.compare("Position") == 0) {
+        config_param_.mode_ = ControlMode::Position;
+      }
+      if (mode.compare("Torque") == 0) {
+        config_param_.mode_ = ControlMode::Torque;
+      }
+    }
     for (size_t i = 0 ; i < jsize ; i++)
     {
       auto mcJointId = robot_->refJointOrderToMCJointId(i);
@@ -246,17 +246,6 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
         continue;
       
       auto & robot = globalController_.controller().robots().robot();
-      auto &datastore = globalController_.controller().datastore();
-      if (datastore.has("ControlMode"))
-      {
-        std::string mode = datastore.get<std::string>("ControlMode");
-        if (mode.compare("Position") == 0) {
-          config_param_.mode_ = ControlMode::Position;
-        }
-        if (mode.compare("Torque") == 0) {
-          config_param_.mode_ = ControlMode::Torque;
-        }
-      }
       switch(config_param_.mode_)
       {
         case mc_unitree::ControlMode::Position:
@@ -295,9 +284,6 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
           static_cast<unsigned int>((globalController_.timestep() * 1000 - elapsed)) * 1000));
     }
   }
-  
-  /* Print controller data to the log */
-  //logger_.log();
 }
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
@@ -328,10 +314,6 @@ bool MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   }
   int rjo_idx = std::distance(rjo.begin(), rjo_it);
   
-  //std::cout << "rjo_idx= " << rjo_idx << ", mcJointIdToJointId=" << robot_->mcJointIdToJointId(rjo_idx) << std::endl;
-  
-  //p = robot_->kp(robot_->mcJointIdToJointId(rjo_idx));
-  //d = robot_->kd(robot_->mcJointIdToJointId(rjo_idx));
   p = robot_->kp(rjo_idx);
   d = robot_->kd(rjo_idx);
   
