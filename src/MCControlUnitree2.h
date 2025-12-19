@@ -89,6 +89,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     {
       mc_rtc::log::info("[mc_unitree]'network-interface' config entry missing");
       mc_rtc::log::info("[mc_unitree]'run as simulation mode");
+      config_param_.network_ = "lo";
     }
     else
     {
@@ -112,59 +113,48 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     mc_rtc::log::info("[mc_unitree] Running simulation only. No connection to real robot");
   }
   
-  if(!config_robot.has("kp"))
+  if(config_robot.has("kp") && config_robot("kp").size() != config_param_.kp_.size())
   {
     std::vector<double> kp;
     config_robot("kp", kp);
-    
-    if (kp.size() != config_param_.kp_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kp {} != {}",
-                         kp.size(), config_param_.kp_.size());
-    }
+
+    mc_rtc::log::error("[mc_unitree] Wrong size of kp {} != {}, using default kp",
+                        kp.size(), config_param_.kp_.size());
     
     for (size_t i = 0 ; i < kp.size() ; i++)
       config_param_.kp_(i) = kp[i];
   }
-  if(!config_robot.has("kd"))
+
+  if(config_robot.has("kd") && config_robot("kd").size() != config_param_.kd_.size())
   {
     std::vector<double> kd;
     config_robot("kd", kd);
 
-    if (kd.size() != config_param_.kd_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kd {} != {}",
+    mc_rtc::log::error("[mc_unitree] Wrong size of kd {} != {}, using default kd",
                          kd.size(), config_param_.kd_.size());
-    }
     
     for (size_t i = 0 ; i < kd.size() ; i++)
       config_param_.kd_(i) = kd[i];
   }
-  if(!config_robot.has("kp_wait"))
+  if(config_robot.has("kp_wait") && config_robot("kp_wait").size() != config_param_.kp_stand_.size())
   {
     std::vector<double> kp;
     config_robot("kp_wait", kp);
     
-    if (kp.size() != config_param_.kp_stand_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kp_wait {} != {}",
-                         kp.size(), config_param_.kp_stand_.size());
-    }
+    mc_rtc::log::error("[mc_unitree] Wrong size of kp_wait {} != {}, using default kp_wait",
+                        kp.size(), config_param_.kp_stand_.size());
     
     for (size_t i = 0 ; i < kp.size() ; i++)
       config_param_.kp_stand_(i) = kp[i];
   }
-  if(!config_robot.has("kd_wait"))
+  if(config_robot.has("kd_wait") && config_robot("kd_wait").size() != config_param_.kd_stand_.size())
   {
     std::vector<double> kd;
     config_robot("kd_wait", kd);
-
-    if (kd.size() != config_param_.kd_stand_.size())
-    {
-      mc_rtc::log::error("[mc_unitree] Wrong size of kd_wait {} != {}",
-                         kd.size(), config_param_.kd_stand_.size());
-    }
     
+    mc_rtc::log::error("[mc_unitree] Wrong size of kd_wait {} != {}, using default kd_wait",
+                        kd.size(), config_param_.kd_stand_.size());
+
     for (size_t i = 0 ; i < kd.size() ; i++)
       config_param_.kd_stand_(i) = kd[i];
   }
@@ -184,56 +174,29 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   controller.controller().datastore().make_call(
     controller.robot().name() + "::SetPDGainsByName",
     [this](const std::string & jn, double p, double d) { return setServoGainsByName(jn, p, d); });
+
+  mc_rtc::log::info("[mc_unitree] Interface created for robot {}", robot_name);
   
   /* Run QP (every timestep ms) and send result joint commands to the robot */
-  controller.running = true;
   now_ = std::chrono::high_resolution_clock::now();
   if(!config_param_.network_.empty())
-  {
-    try
-    {
-      while(controller.running)
-      {
-        sleep(1);
-      }
-    }
-    catch(const std::exception& e)
-    {
-      mc_rtc::log::error("[mc_unitree] Could not run on {} controller due to library error: {}", robot_name, e.what());
-    }
-  }
-  else
-  {
-    auto jsize = robot.refJointOrder().size();
-    RobotSensorInfo stateIn;
-    stateIn.qIn_.resize(jsize, 0.0);
-    stateIn.dqIn_.resize(jsize, 0.0);
-    stateIn.tauIn_.resize(jsize, 0.0);
-    stateIn.rpyIn_.setZero();
-    stateIn.quatIn_.setIdentity();
-    stateIn.accIn_.setZero();
-    stateIn.rateIn_.setZero();
-    
-    RobotCommandData cmdOut;
-    cmdOut.qOut_.resize(jsize, 0.0);
-    cmdOut.dqOut_.resize(jsize, 0.0);
-    cmdOut.tauOut_.resize(jsize, 0.0);
-    cmdOut.kpOut_.resize(jsize);
-    cmdOut.kdOut_.resize(jsize);
-    for (size_t i = 0 ; i < jsize ; i++)
-    {
-      cmdOut.kpOut_[i] = robot_->kp(i);
-      cmdOut.kdOut_[i] = robot_->kd(i);
-    }
-    
+  {    
     robot_->setInitialState(robot.stance());
-    while(controller.running)
-    {
-      run(stateIn, cmdOut);
-    }
+
+    controller.init(robot_->getState().qIn_);
+    controller.controller().gui()->addElement(
+        {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { controller.running = false; }));
+    
+    addLogEntryRobotInfo();
+
+    controller.running = true;
   }
   
   mc_rtc::log::info("[mc_unitree] interface initialized");
+
+  while (controller.running) {
+    sleep(1); 
+  }
 }
 
 /* Destructor */
@@ -260,30 +223,36 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   globalController_.setEncoderValues(state.qIn_);
   globalController_.setEncoderVelocities(state.dqIn_);
   globalController_.setJointTorques(state.tauIn_);
-  
+
   if(globalController_.run())
   {
     /* Update control value from the data in a robot */
-    auto jsize = globalController_.controller().robots().robot().refJointOrder().size();
+    auto & robot = globalController_.controller().robots().robot();
+    auto jsize = robot.refJointOrder().size();
+    auto &datastore = globalController_.controller().datastore();
+    if (datastore.has("ControlMode"))
+    {
+      robot_->setControlMode(datastore.get<std::string>("ControlMode"));
+    }
+    
     for (size_t i = 0 ; i < jsize ; i++)
     {
       auto mcJointId = robot_->refJointOrderToMCJointId(i);
       if (mcJointId == -1)
         continue;
       
-      auto & robot = globalController_.controller().robots().robot();
       switch(config_param_.mode_)
       {
-      case mc_unitree::ControlMode::Position:
-        cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Velocity:
-        cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
-        break;
-      case mc_unitree::ControlMode::Torque:
-        cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
-        break;
+        case mc_unitree::ControlMode::Position:
+          cmdData.qOut_[i] = robot.mbc().q[mcJointId][0];
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Velocity:
+          cmdData.dqOut_[i] = robot.mbc().alpha[mcJointId][0];
+          break;
+        case mc_unitree::ControlMode::Torque:
+          cmdData.tauOut_[i] = robot.mbc().jointTorque[mcJointId][0];
+          break;
       }
     }
     
@@ -293,21 +262,7 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
       robot_->loopbackState(cmdData);
     }
   }
-  
-  if(!controller_init_once_)
-  {
-    /* Set up interface GUI tab */
-    globalController_.init(state.qIn_);
-    globalController_.controller().gui()->addElement(
-        {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { this->globalController_.running = false; }));
-    
-    /* Setup log entries */
-    //logger_.start(controller.current_controller(), controller.timestep());
-    addLogEntryRobotInfo();
-    
-    controller_init_once_ = true;
-  }
-  
+
   /* Wait until next controller run */
   if(config_param_.network_.empty())
   {
@@ -324,9 +279,6 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
           static_cast<unsigned int>((globalController_.timestep() * 1000 - elapsed)) * 1000));
     }
   }
-  
-  /* Print controller data to the log */
-  //logger_.log();
 }
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
@@ -357,10 +309,6 @@ bool MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   }
   int rjo_idx = std::distance(rjo.begin(), rjo_it);
   
-  //std::cout << "rjo_idx= " << rjo_idx << ", mcJointIdToJointId=" << robot_->mcJointIdToJointId(rjo_idx) << std::endl;
-  
-  //p = robot_->kp(robot_->mcJointIdToJointId(rjo_idx));
-  //d = robot_->kd(robot_->mcJointIdToJointId(rjo_idx));
   p = robot_->kp(rjo_idx);
   d = robot_->kd(rjo_idx);
   
@@ -414,31 +362,37 @@ bool MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
  void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::addLogEntryRobotInfo()
 {
-  logger_.addLogEntry("time", [this]() { return robot_->time(); });
-  logger_.addLogEntry("time_run", [this]() { return robot_->timeRun(); });
-  logger_.addLogEntry("delay", [this]() { return delay_; });
-  
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::time", this, [&]() { return robot_->time(); });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::time_run", this, [&]() { return robot_->timeRun(); });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name() + "::delay", this, [&]() { return delay_; });
+
   /* Sensors */
   /* Position(Angle) values */
-  logger_.addLogEntry("measured_joint_position", [this]() -> const std::vector<double> & { return robot_->getState().qIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  +"::measured_joint_position", [this]() { return robot_->getState().qIn_; });
   /* Velocity values */
-  logger_.addLogEntry("measured_joint_velocity", [this]() -> const std::vector<double> & { return robot_->getState().dqIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  +"::measured_joint_velocity", [this]() { return robot_->getState().dqIn_; });
   /* Torque values */
-  logger_.addLogEntry("measured_joint_torque", [this]() -> const std::vector<double> & { return robot_->getState().tauIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  +"::measured_joint_torque", [this](){ return robot_->getState().tauIn_; });
   /* Orientation sensor */
-  logger_.addLogEntry("measured_imu_rpy", [this]() -> const Eigen::Vector3d & { return robot_->getState().rpyIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  +"::measured_imu_rpy", [this]() { return robot_->getState().rpyIn_; });
   /* Accelerometer */
-  logger_.addLogEntry("measured_imu_accel", [this]() -> const Eigen::Vector3d & { return robot_->getState().accIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  +"::measured_imu_accel", [this]() { return robot_->getState().accIn_; });
   /* Angular velocity */
-  logger_.addLogEntry("measured_imu_rate", [this]() -> const Eigen::Vector3d & { return robot_->getState().rateIn_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::measured_imu_rate", [this]() { return robot_->getState().rateIn_; });
   
   /* Command data to send to the robot */
   /* Position(Angle) values */
-  logger_.addLogEntry("command_joint_position", [this]() -> const std::vector<double> & { return robot_->getCommand().qOut_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_position", [this]() { return robot_->getCommand().qOut_; });
   /* Velocity values */
-  logger_.addLogEntry("command_joint_velocity", [this]() -> const std::vector<double> & { return robot_->getCommand().dqOut_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_velocity", [this]() { return robot_->getCommand().dqOut_; });
   /* Torque values */
-  logger_.addLogEntry("command_joint_torque", [this]() -> const std::vector<double> & { return robot_->getCommand().tauOut_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_torque", [this]() { return robot_->getCommand().tauOut_; });
+
+  /* PD gains */
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_kp", [this]() { return robot_->getCommand().kpOut_; });
+  globalController_.controller().logger().addLogEntry(globalController_.controller().robot().name()  + "::command_joint_kd", [this]() { return robot_->getCommand().kdOut_; });
+
+  mc_rtc::log::success("Entries added to logger");
 }
   
 } // namespace mc_unitree
