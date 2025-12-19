@@ -30,7 +30,13 @@ $ make ; make install
 ```
 
 ## 4. Usage
-Run the program:
+
+### Configuration
+
+There is an example in `etc/` which content can be added to mc_rtc's config file to override the default values of this repository.  
+The network interface is loopback ("lo") by default for simulation, but can be replace by your ethernet interface (check `ifconfig`) for deployment.
+
+### Running the program
 
 ```
 $ MCControlUnitree --conf <install path/etc/mc_unitree/mc_rtc.yaml> --network <name of network adaptor>

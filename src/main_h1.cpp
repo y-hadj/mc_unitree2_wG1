@@ -3,11 +3,10 @@
 #include <mc_rtc/config.h>
 
 #include <fstream>
-#include <boost/program_options.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
+#include <CLI/CLI.hpp>
 
-namespace po = boost::program_options;
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -26,43 +25,32 @@ bool file_exists(const std::string& str)
 int main(int argc, char * argv[])
 {
   /* Set command line arguments options */
-  /* Usage example: MCControlUnitree2 -h simulation -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
-  std::string conf_file;
-  std::string network;
-  po::options_description desc(std::string("MCControlH1 options"));
+  /* Usage example: MCControlUnitree2 -n lo -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
   
-  bfs::path config_path = mc_rtc::user_config_directory_path("mc_rtc.conf");
+  fs::path config_path = mc_rtc::user_config_directory_path("mc_rtc.conf");
   // Load user's local configuration if it exists
-  if(!bfs::exists(config_path)) { config_path.replace_extension(".yaml"); }
+  if(!fs::exists(config_path)) { config_path.replace_extension(".yaml"); }
   std::string check_file = config_path.string();
   if(!file_exists(check_file))
   {
     check_file = "";
   }
   
-  // clang-format off
-  desc.add_options()
-    ("help", "display help message")
-    ("network,n", po::value<std::string>(&network)->default_value("lo"), "name of network adaptor")
-    ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
-  // clang-format on
+  std::string conf_file = check_file;
+  std::string network;
+  
+  CLI::App app{"MCControlH1 options"};
+  app.add_option("-n,--network", network, "Name of network adaptor")->default_val("");
+  app.add_option("-f,--conf", conf_file, "Configuration file")->default_val(check_file);
   
   /* Parse command line arguments */
-  po::variables_map vm;
   try
   {
-    po::store(po::parse_command_line(argc, argv, desc), vm);
+    app.parse(argc, argv);
   }
-  catch(const std::exception& e)
+  catch(const CLI::ParseError& e)
   {
-    std::cerr << e.what() << '\n';
-    return 1;
-  }
-  po::notify(vm);
-  if(vm.count("help"))
-  {
-    std::cout << desc << std::endl;
-    return 1;
+    return app.exit(e);
   }
   mc_rtc::log::info("[mc_unitree] Reading additional configuration from {}", conf_file);
 

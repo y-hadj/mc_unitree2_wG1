@@ -208,7 +208,6 @@ protected:
   mc_rbdyn::Robot* robot_ = nullptr;
   
 private:
-  void setControlMode(std::string mode);
   /*publisher*/
   unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::LowCmd_> lowcmd_publisher_;
   /*subscriber*/
@@ -332,6 +331,8 @@ public:
   const std::unordered_map<int, int> & mcJointIdToJointId() const { return mcJointIdToJointId_; }
   
   int mcJointIdToJointId(int i) { return mcJointIdToJointId_[i]; }
+  
+  void setControlMode(const std::string & mode);
   
   void LowCommandWriter();
   

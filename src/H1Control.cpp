@@ -151,11 +151,7 @@ H1Control::H1Control(MCControlUnitree2<H1Control, H1SensorInfo, H1CommandData, H
 
   mode_ = config_param.mode_;
 
-  std::string network = config_param.network_;
-  if(h1_config.has("network-interface"))
-  {
-    network.assign(h1_config("network-interface"));
-  }
+  const std::string &network = config_param.network_;
 
   if (!network.empty())
   {
@@ -710,13 +706,16 @@ void H1Control::loopbackState(const H1CommandData & data)
   }
 }
 
-void H1Control::setControlMode(std::string mode) {
+void H1Control::setControlMode(const std::string &mode) {
   if (mode.compare("Position") == 0) {
     mode_ = ControlMode::Position;
     return;
   }
-  if (mode.compare("Torque") == 0) {
+  else if (mode.compare("Torque") == 0) {
    mode_ = ControlMode::Torque;
    return;
+  }
+  else {
+    mc_rtc::log::error("{} ControlMode not supported", mode);
   }
 } 

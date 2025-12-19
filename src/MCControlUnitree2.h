@@ -89,6 +89,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     {
       mc_rtc::log::info("[mc_unitree]'network-interface' config entry missing");
       mc_rtc::log::info("[mc_unitree]'run as simulation mode");
+      config_param_.network_ = "lo";
     }
     else
     {
@@ -185,8 +186,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
     controller.init(robot_->getState().qIn_);
     controller.controller().gui()->addElement(
         {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { controller.running = false; }));
-
-    // controller.controller().logger().addLogEntry("tesst", this, [&]() {return std::string("test");});
+    
     addLogEntryRobotInfo();
 
     controller.running = true;
@@ -227,25 +227,20 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   if(globalController_.run())
   {
     /* Update control value from the data in a robot */
-    auto jsize = globalController_.controller().robots().robot().refJointOrder().size();
+    auto & robot = globalController_.controller().robots().robot();
+    auto jsize = robot.refJointOrder().size();
     auto &datastore = globalController_.controller().datastore();
     if (datastore.has("ControlMode"))
     {
-      std::string mode = datastore.get<std::string>("ControlMode");
-      if (mode.compare("Position") == 0) {
-        config_param_.mode_ = ControlMode::Position;
-      }
-      if (mode.compare("Torque") == 0) {
-        config_param_.mode_ = ControlMode::Torque;
-      }
+      robot_->setControlMode(datastore.get<std::string>("ControlMode"));
     }
+    
     for (size_t i = 0 ; i < jsize ; i++)
     {
       auto mcJointId = robot_->refJointOrderToMCJointId(i);
       if (mcJointId == -1)
         continue;
       
-      auto & robot = globalController_.controller().robots().robot();
       switch(config_param_.mode_)
       {
         case mc_unitree::ControlMode::Position:

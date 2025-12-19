@@ -3,9 +3,7 @@
 #include <mc_rtc/config.h>
 
 #include <fstream>
-#include <boost/program_options.hpp>
-
-namespace po = boost::program_options;
+#include <CLI/CLI.hpp>
 
 namespace
 {
@@ -24,10 +22,7 @@ bool file_exists(const std::string& str)
 int main(int argc, char * argv[])
 {
   /* Set command line arguments options */
-  /* Usage example: MCControlUnitree2 -h simulation -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
-  std::string conf_file;
-  std::string network;
-  po::options_description desc(std::string("MCControlGo2 options"));
+  /* Usage example: MCControlUnitree2 -n eth0 -f @ETC_PATH@/mc_unitree/mc_rtc_xxxxx.yaml */
   
   // Get the configuration file path dedicated to this program
   std::string check_file = mc_unitree::CONFIGURATION_FILE;
@@ -36,29 +31,21 @@ int main(int argc, char * argv[])
     check_file = "";
   }
   
-  // clang-format off
-  desc.add_options()
-    ("help", "display help message")
-    ("networ,n", po::value<std::string>(&network)->default_value("eth0"), "name of network adaptor")
-    ("conf,f", po::value<std::string>(&conf_file)->default_value(check_file), "configuration file");
-  // clang-format on
-
+  std::string conf_file = check_file;
+  std::string network = "lo";
+  
+  CLI::App app{"MCControlGo2 options"};
+  app.add_option("-n,--network", network, "Name of network adaptor")->default_val("lo");
+  app.add_option("-f,--conf", conf_file, "Configuration file")->default_val(check_file);
+  
   /* Parse command line arguments */
-  po::variables_map vm;
   try
   {
-    po::store(po::parse_command_line(argc, argv, desc), vm);
+    app.parse(argc, argv);
   }
-  catch(const std::exception& e)
+  catch(const CLI::ParseError& e)
   {
-    std::cerr << e.what() << '\n';
-    return 1;
-  }
-  po::notify(vm);
-  if(vm.count("help"))
-  {
-    std::cout << desc << std::endl;
-    return 1;
+    return app.exit(e);
   }
   mc_rtc::log::info("[mc_unitree] Reading additional configuration from {}", conf_file);
 
