@@ -13,7 +13,7 @@ if (ENABLE_RT_PREEMPT)
   add_definitions(-D__ENABLE_RT_PREEMPT__)
 endif()
 
-set(UNITREE_SDK2_SRC_DIR unitree_sdk2 CACHE STRING "Set unitree sdk2 source directory")
+set(UNITREE_SDK2_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../unitree_sdk2" CACHE STRING "Set unitree sdk2 source directory")
 
 set(CMAKE_INSTALL_RPATH "$ENV{LD_LIBRARY_PATH}")
 
