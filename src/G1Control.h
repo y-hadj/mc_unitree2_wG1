@@ -24,9 +24,9 @@
 #include <unitree/idl/hg/LowCmd_.hpp>
 
 // located in unitree_sdk2/example/h1/low_level 
-#include <g1/low_level/utils/base_state.h>
-#include <g1/low_level/utils/data_buffer.hpp>
-#include <g1/low_level/utils/motors.hpp>
+#include <base_state.h>
+#include <data_buffer.hpp>
+#include <motors.hpp>
 
 #include <mc_control/mc_controller.h>
 #include "MCControlUnitree2.h"

@@ -118,12 +118,12 @@ if (GENERATE_G1_CONTROLLER)
   set(G1_SOURCES
     main_g1.cpp
     G1Control.cpp
-    ${UNITREE_SDK2_SRC_DIR}/example/g1/low_level/utils/motors.cpp
   )
 
   message(STATUS "unitree_sdk2 directory set to: ${UNITREE_SDK2_SRC_DIR}")
   include_directories(
     ${UNITREE_SDK2_SRC_DIR}/example
+    ${UNITREE_SDK2_SRC_DIR}/example/g1/low_level/utils 
     ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
   )
   
