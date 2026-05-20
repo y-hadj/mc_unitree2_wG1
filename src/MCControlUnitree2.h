@@ -10,6 +10,12 @@
 
 #include "ControlMode.h"
 
+
+// ===============================================================================================================
+// TODO.
+// 1. verify that the default values are passed for pd gains when their size is bad in the config params
+// ===============================================================================================================
+
 namespace mc_unitree
 {
 /**
