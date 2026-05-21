@@ -39,7 +39,7 @@ The network interface is loopback ("lo") by default for simulation, but can be r
 ### Running the program
 
 ```
-$ MCControlUnitree --conf <install path/etc/mc_unitree/mc_rtc.yaml> --network <name of network adaptor>
+$ MCControl<name-of-robot> --conf <install path/etc/mc_unitree/mc_rtc.yaml> --network <name of network adaptor>
 ```
 
 ```
