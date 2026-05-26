@@ -161,63 +161,50 @@ G1Control::G1Control(MCControlUnitree2<G1Control, G1SensorInfo, G1CommandData, G
   const std::string &network = config_param.network_;
   const bool is_loopback = (network == "lo" || network.empty());
 
-  int simulation = 1;
   if (!network.empty())
   {
+    int simulation = 1;
     if(network != "lo") simulation = 0;
     mc_rtc::log::info("[mc_unitree] G1Control: Using network setting: {}", network);
-  }
 
-  unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
-  mc_rtc::log::info("Initialize channel factory.");
-
-  if(simulation == 0)
-  {
-    // Release onboard motion control service before taking low-level control
-    auto msc = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
-    msc->SetTimeout(5.0f);
-    msc->Init();
-    std::string form, name;
-    while (msc->CheckMode(form, name), !name.empty())
-    {
-      mc_rtc::log::warning("[mc_unitree] Motion service '{}' still active, releasing...", name);
-      if (msc->ReleaseMode() != 0)
-        mc_rtc::log::warning("[mc_unitree] ReleaseMode failed, retrying in 5s...");
-      sleep(5);
-    }
-    mc_rtc::log::info("[mc_unitree] Motion control service released. Taking low-level control.");
-
-    // DDS publisher/subscriber init only for real robot
+    /* Initialize */
+    unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
+    mc_rtc::log::info("Initialize channel factory.");
+    
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_hg::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
     lowcmd_publisher_->InitChannel();
-
+    command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "command_writer", UT_CPU_ID_NONE, 2000, &G1Control::LowCommandWriter, this);
+  
     lowstate_subscriber_.reset(
       new unitree::robot::ChannelSubscriber<unitree_hg::msg::dds_::LowState_>(TOPIC_LOWSTATE));
     lowstate_subscriber_->InitChannel(
-      std::bind(&G1Control::LowStateHandler, this, std::placeholders::_1), 1);
-
-    command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
-      "command_writer", UT_CPU_ID_NONE, 2000, &G1Control::LowCommandWriter, this);
-  }
-
-  // Control thread always spawned (real robot and loopback)
-  int control_period_us = static_cast<int>(control_dt_ * 1e6);
+      std::bind(&G1Control::LowStateHandler, this, std::placeholders::_1),
+      1);
+    
 #if defined(__ENABLE_RT_PREEMPT__)
-  pthread_create(&control_thread_, NULL,
-                 [](void* arg) -> void* {
-                   auto* ctrl = static_cast<G1Control*>(arg);
-                   while(true) ctrl->Control();
-                   return nullptr;
-                 }, this);
+    pthread_create(&control_thread_, NULL,
+                   [](void* arg) -> void* {
+                     auto* ctrl = static_cast<G1Control::Control*>(arg);
+                     ctrl->Control();
+                     return nullptr;
+                   }, NULL);
 #else
-  control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
-    "control", UT_CPU_ID_NONE, control_period_us, &G1Control::Control, this);
+    int control_period_us = control_dt_ * 1e6;
+    control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "control", UT_CPU_ID_NONE, control_period_us, &G1Control::Control,
+      this);
 #endif
-
-  report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
-    "report_sensor", UT_CPU_ID_NONE, static_cast<int>(report_dt_ * 1e6),
-    &G1Control::UpdateTables, this, false);
+    
+    int report_period_us = report_dt_ * 1e6;
+    report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "report_sensor", UT_CPU_ID_NONE, report_period_us,
+      &G1Control::UpdateTables, this, false);
+    
+    // Initialize tables for console display
+    UpdateTables(true);
+  }
 }
 
 G1Control::~G1Control()
@@ -715,6 +702,7 @@ void G1Control::setInitialState(const std::map<std::string, std::vector<double>>
  */
 void G1Control::loopbackState(const G1CommandData & data)
 {
+  if (!running_) return; 
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
   {
     stateIn_.qIn_[i] = data.qOut_[i];

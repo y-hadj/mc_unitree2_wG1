@@ -203,6 +203,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
       }
     }
     controller.init(qInit);
+    robot_->setRunning(true);  // ADD THIS
   }
   else // loopback / simulation
   {
@@ -214,6 +215,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
         qInit[std::distance(robot.refJointOrder().begin(), it)] = jval[0];
     }
     controller.init(qInit);
+    robot_->setRunning(true);  // ADD THIS
   }
 
   controller.controller().gui()->addElement(

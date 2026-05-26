@@ -456,6 +456,8 @@ public:
    * @param data Command data for sending to G1 robot
    */
   void loopbackState(const G1CommandData & data);
+
+  void setRunning(bool r) { running_ = r; }
 };
 
 } // namespace mc_unitree
