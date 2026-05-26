@@ -25,7 +25,9 @@ G1Control::G1Control(MCControlUnitree2<G1Control, G1SensorInfo, G1CommandData, G
   mc_rtc::log::info("[mc_unitree] G1 Number of joints: {}", robot_->refJointOrder().size());
   mc_rtc::log::info("[mc_unitree] G1 Control dt: {}", control_dt_);
 
-  mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
+  // mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
+  auto & controller = mc_controller_->controller();
+  auto gconfig = controller.configuration();
   if(!gconfig.config.has("Unitree"))
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration. Dumping the loaded config file: {}", gconfig.config.dump());
