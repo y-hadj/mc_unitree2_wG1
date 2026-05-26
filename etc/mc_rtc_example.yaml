@@ -1,11 +1,14 @@
 ---
 # Interface specific parameters (mc_unitree2)
 # This is an example configuration file
-MainRobot: H1
+MainRobot: G1_29dof #H1
 
-Enabled: Posture
+Enabled: G1TaskController #[Posture, G1TaskController]
 
 Unitree:
+  g1_29dof:
+    network-interface: lo
+    
   h1:
     network-interface: lo
 

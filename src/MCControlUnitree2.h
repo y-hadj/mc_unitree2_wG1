@@ -10,6 +10,12 @@
 
 #include "ControlMode.h"
 
+
+// ===============================================================================================================
+// TODO.
+// 1. verify that the default values are passed for pd gains when their size is bad in the config params
+// ===============================================================================================================
+
 namespace mc_unitree
 {
 /**
@@ -76,7 +82,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   if(!unitreeConfig.has(robot_name))
   {
     mc_rtc::log::error(
-      "[mc_unitree] A name that matches the controller robot name is not defined in the configuration file");
+      "[mc_unitree] A name that matches the controller robot name is not defined in the configuration file. The wrong name is {}",robot_name);
     return;
   }
   
@@ -103,7 +109,8 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   
   auto & robot = controller.controller().robots().robot(robot_name);
   /* Connect to robot (real or simulation) */
-  if(!config_param_.network_.empty())
+  // if(!config_param_.network_.empty())
+  if(!config_param_.network_.empty() && config_param_.network_ != "lo")
   {
     mc_rtc::log::info("[mc_unitree] Connecting to {} robot on {}",
                       robot_name, config_param_.network_);
@@ -179,19 +186,43 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   
   /* Run QP (every timestep ms) and send result joint commands to the robot */
   now_ = std::chrono::high_resolution_clock::now();
-  if(!config_param_.network_.empty())
+
+  if(!config_param_.network_.empty() && config_param_.network_ != "lo") //when arg --network <G1-interface>
   {    
     robot_->setInitialState(robot.stance());
-
-    controller.init(robot_->getState().qIn_);
-    controller.controller().gui()->addElement(
-        {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { controller.running = false; }));
-    
-    addLogEntryRobotInfo();
-
-    controller.running = true;
+    auto & initState = robot_->getState();
+    auto qInit = initState.qIn_;
+    if(std::all_of(qInit.begin(), qInit.end(), [](double v){ return v == 0.0; }))
+    {
+      mc_rtc::log::warning("[mc_unitree] No real state received, initializing from stance");
+      for(const auto & [jname, jval] : robot.stance())
+      {
+        auto it = std::find(robot.refJointOrder().begin(), robot.refJointOrder().end(), jname);
+        if(it != robot.refJointOrder().end())
+          qInit[std::distance(robot.refJointOrder().begin(), it)] = jval[0];
+      }
+    }
+    controller.init(qInit);
+    robot_->setRunning(true);
   }
-  
+  else //when arg --network lo
+  {
+    std::vector<double> qInit(robot.refJointOrder().size(), 0.0);
+    for(const auto & [jname, jval] : robot.stance())
+    {
+      auto it = std::find(robot.refJointOrder().begin(), robot.refJointOrder().end(), jname);
+      if(it != robot.refJointOrder().end())
+        qInit[std::distance(robot.refJointOrder().begin(), it)] = jval[0];
+    }
+    controller.init(qInit);
+    robot_->setRunning(true);
+  }
+
+  controller.controller().gui()->addElement(
+      {"Robot"}, mc_rtc::gui::Button("Stop controller", [&]() { controller.running = false; }));
+  addLogEntryRobotInfo();
+  controller.running = true;
+
   mc_rtc::log::info("[mc_unitree] interface initialized");
 
   while (controller.running) {
@@ -256,7 +287,8 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
       }
     }
     
-    if(config_param_.network_.empty())
+    // if(config_param_.network_.empty())
+    if(config_param_.network_.empty() || config_param_.network_ == "lo")
     {
       /* Loop back the value of "cmdOut" to "stateIn" */
       robot_->loopbackState(cmdData);
@@ -264,7 +296,8 @@ void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotCon
   }
 
   /* Wait until next controller run */
-  if(config_param_.network_.empty())
+  // if(config_param_.network_.empty())
+  if(config_param_.network_.empty() || config_param_.network_ == "lo")
   {
     auto now = std::chrono::high_resolution_clock::now();
     double elapsed = std::chrono::duration<double>(now - start_t_).count();
