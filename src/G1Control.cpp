@@ -205,6 +205,8 @@ G1Control::G1Control(MCControlUnitree2<G1Control, G1SensorInfo, G1CommandData, G
     // Initialize tables for console display
     UpdateTables(true);
   }
+
+  running_ = true;
 }
 
 G1Control::~G1Control()
@@ -293,7 +295,7 @@ void G1Control::RecordMotorState(const unitree_hg::msg::dds_::LowState_ &msg)
   {
     ms_tmp.q.at(i) = msg.motor_state()[i].q();
     ms_tmp.dq.at(i) = msg.motor_state()[i].dq();
-    // tau not available in G1 MotorState struct
+    ms_tmp.tau.at(i) = msg.motor_state()[i].tau_est();
   }
   motor_state_buffer_.SetData(ms_tmp);
 }
@@ -303,7 +305,8 @@ void G1Control::RecordBaseState(const unitree_hg::msg::dds_::LowState_ &msg)
   BaseState bs_tmp;
   bs_tmp.omega = msg.imu_state().gyroscope();
   bs_tmp.rpy = msg.imu_state().rpy();
-  // quat and acc not available in G1 BaseState struct
+  bs_tmp.quat = msg.imu_state().quaternion();
+  bs_tmp.acc = msg.imu_state().accelerometer();
   base_state_buffer_.SetData(bs_tmp);
 }
 
@@ -702,16 +705,15 @@ void G1Control::setInitialState(const std::map<std::string, std::vector<double>>
  */
 void G1Control::loopbackState(const G1CommandData & data)
 {
-  if (!running_) return; 
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
   {
     stateIn_.qIn_[i] = data.qOut_[i];
     stateIn_.dqIn_[i] = data.dqOut_[i];
     stateIn_.tauIn_[i] = data.tauOut_[i];
     
-    if (stateIn_.qIn_[i] > robot_->qu()[i][0])
+    if (i < robot_->qu().size() && !robot_->qu()[i].empty() && stateIn_.qIn_[i] > robot_->qu()[i][0])
       stateIn_.qIn_[i] = robot_->qu()[i][0];
-    else if (stateIn_.qIn_[i] < robot_->ql()[i][0])
+    else if (i < robot_->ql().size() && !robot_->ql()[i].empty() && stateIn_.qIn_[i] < robot_->ql()[i][0])
       stateIn_.qIn_[i] = robot_->ql()[i][0];
   }
 }

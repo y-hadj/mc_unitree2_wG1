@@ -187,7 +187,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   /* Run QP (every timestep ms) and send result joint commands to the robot */
   now_ = std::chrono::high_resolution_clock::now();
 
-  if(!config_param_.network_.empty() && config_param_.network_ != "lo")
+  if(!config_param_.network_.empty() && config_param_.network_ != "lo") //when arg --network <G1-interface>
   {    
     robot_->setInitialState(robot.stance());
     auto & initState = robot_->getState();
@@ -203,9 +203,9 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
       }
     }
     controller.init(qInit);
-    robot_->setRunning(true);  // ADD THIS
+    robot_->setRunning(true);
   }
-  else // loopback / simulation
+  else //when arg --network lo
   {
     std::vector<double> qInit(robot.refJointOrder().size(), 0.0);
     for(const auto & [jname, jval] : robot.stance())
@@ -215,7 +215,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
         qInit[std::distance(robot.refJointOrder().begin(), it)] = jval[0];
     }
     controller.init(qInit);
-    robot_->setRunning(true);  // ADD THIS
+    robot_->setRunning(true);
   }
 
   controller.controller().gui()->addElement(
