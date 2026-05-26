@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
   std::string conf_file = check_file;
   std::string network;
   
-  CLI::App app{"MCControlH1 options"};
+  CLI::App app{"MCControlG1 options"};
   app.add_option("-n,--network", network, "Name of network adaptor")->default_val("");
   app.add_option("-f,--conf", conf_file, "Configuration file")->default_val(check_file);
   

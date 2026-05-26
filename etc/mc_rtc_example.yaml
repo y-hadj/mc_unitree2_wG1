@@ -6,7 +6,7 @@ MainRobot: G1_29dof #H1
 Enabled: Posture #[Posture, G1TaskController]
 
 Unitree:
-  g1:
+  g1_29dof:
     network-interface: lo
     
   h1:

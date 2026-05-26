@@ -24,9 +24,9 @@
 #include <unitree/idl/hg/LowCmd_.hpp>
 
 // located in unitree_sdk2/example/h1/low_level 
-#include <base_state.h>
-#include <data_buffer.hpp>
-#include <motors.hpp>
+#include <g1/low_level/utils/base_state.h>
+#include <g1/low_level/utils/data_buffer.hpp>
+#include <g1/low_level/utils/motors.hpp>
 
 #include <mc_control/mc_controller.h>
 #include "MCControlUnitree2.h"
@@ -48,7 +48,7 @@ using Vector3 = Eigen::Vector3d;
 
 namespace mc_unitree
 {
-  const std::string ROBOT_NAME = "g1";
+  const std::string ROBOT_NAME = "G1_29dof"; //was g1
   
   const int jointIdsToMotorIds[29] =
     {JointIndex::LeftHipPitch,
@@ -284,6 +284,7 @@ protected:
   mc_rbdyn::Robot* robot_ = nullptr;
   
 private:
+  uint8_t mode_machine_ = 0;
   /*publisher*/
   unitree::robot::ChannelPublisherPtr<unitree_hg::msg::dds_::LowCmd_> lowcmd_publisher_;
   /*subscriber*/

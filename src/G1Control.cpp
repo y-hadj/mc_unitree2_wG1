@@ -1,4 +1,3 @@
-
 #include <mc_control/mc_global_controller.h>
 #include <mc_rtc/logging.h>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
@@ -29,14 +28,14 @@ G1Control::G1Control(MCControlUnitree2<G1Control, G1SensorInfo, G1CommandData, G
   mc_control::MCGlobalController::GlobalConfiguration gconfig("", nullptr);
   if(!gconfig.config.has("Unitree"))
   {
-    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration");
+    mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration. Dumping the loaded config file: {}", gconfig.config.dump());
   }
   auto unitree_config = gconfig.config("Unitree");
-  if(!unitree_config.has("g1"))
+  if(!unitree_config.has("g1_29dof"))
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree G1 configuration");
   }
-  auto g1_config = unitree_config("g1");
+  auto g1_config = unitree_config("g1_29dof");
   
   // q_init, q_lim_lower, q_lim_upper will be overwritten by definition in mc_g1 and urdf
   if(g1_config.has("q_init"))
@@ -160,68 +159,65 @@ G1Control::G1Control(MCControlUnitree2<G1Control, G1SensorInfo, G1CommandData, G
   mode_ = config_param.mode_;
 
   const std::string &network = config_param.network_;
+  const bool is_loopback = (network == "lo" || network.empty());
 
+  int simulation = 1;
   if (!network.empty())
   {
-    int simulation = 1;
     if(network != "lo") simulation = 0;
     mc_rtc::log::info("[mc_unitree] G1Control: Using network setting: {}", network);
+  }
 
-    /* Initialize */
-    unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
-    mc_rtc::log::info("Initialize channel factory.");
+  unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
+  mc_rtc::log::info("Initialize channel factory.");
 
-    //release onboard motion control first otherwise low-level commands will be ignored
-    if (simulation == 0)  // only on real robot, not loopback
+  if(simulation == 0)
+  {
+    // Release onboard motion control service before taking low-level control
+    auto msc = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
+    msc->SetTimeout(5.0f);
+    msc->Init();
+    std::string form, name;
+    while (msc->CheckMode(form, name), !name.empty())
     {
-      auto msc = std::make_shared<unitree::robot::b2::MotionSwitcherClient>();
-      msc->SetTimeout(5.0f);
-      msc->Init();
-      std::string form, name;
-      while (msc->CheckMode(form, name), !name.empty())
-      {
-        mc_rtc::log::warning("[mc_unitree] Motion service '{}' still active, releasing...", name);
-        if (msc->ReleaseMode() != 0)
-          mc_rtc::log::warning("[mc_unitree] ReleaseMode failed, retrying in 5s...");
-        sleep(5);
-      }
-      mc_rtc::log::info("[mc_unitree] Motion control service released. Taking low-level control.");
+      mc_rtc::log::warning("[mc_unitree] Motion service '{}' still active, releasing...", name);
+      if (msc->ReleaseMode() != 0)
+        mc_rtc::log::warning("[mc_unitree] ReleaseMode failed, retrying in 5s...");
+      sleep(5);
     }
-    
+    mc_rtc::log::info("[mc_unitree] Motion control service released. Taking low-level control.");
+
+    // DDS publisher/subscriber init only for real robot
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_hg::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
     lowcmd_publisher_->InitChannel();
-    command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
-      "command_writer", UT_CPU_ID_NONE, 2000, &G1Control::LowCommandWriter, this);
-  
+
     lowstate_subscriber_.reset(
       new unitree::robot::ChannelSubscriber<unitree_hg::msg::dds_::LowState_>(TOPIC_LOWSTATE));
     lowstate_subscriber_->InitChannel(
-      std::bind(&G1Control::LowStateHandler, this, std::placeholders::_1),
-      1);
-    
-#if defined(__ENABLE_RT_PREEMPT__)
-    pthread_create(&control_thread_, NULL,
-                   [](void* arg) -> void* {
-                     auto* ctrl = static_cast<G1Control::Control*>(arg);
-                     ctrl->Control();
-                     return nullptr;
-                   }, NULL);
-#else
-    int control_period_us = control_dt_ * 1e6;
-    control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
-      "control", UT_CPU_ID_NONE, control_period_us, &G1Control::Control,
-      this);
-#endif
-    
-    int report_period_us = report_dt_ * 1e6;
-    report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
-      "report_sensor", UT_CPU_ID_NONE, report_period_us,
-      &G1Control::UpdateTables, this, false);
-    
-    // Initialize tables for console display
-    UpdateTables(true);
+      std::bind(&G1Control::LowStateHandler, this, std::placeholders::_1), 1);
+
+    command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
+      "command_writer", UT_CPU_ID_NONE, 2000, &G1Control::LowCommandWriter, this);
   }
+
+  // Control thread always spawned (real robot and loopback)
+  int control_period_us = static_cast<int>(control_dt_ * 1e6);
+#if defined(__ENABLE_RT_PREEMPT__)
+  pthread_create(&control_thread_, NULL,
+                 [](void* arg) -> void* {
+                   auto* ctrl = static_cast<G1Control*>(arg);
+                   while(true) ctrl->Control();
+                   return nullptr;
+                 }, this);
+#else
+  control_thread_ptr_ = unitree::common::CreateRecurrentThreadEx(
+    "control", UT_CPU_ID_NONE, control_period_us, &G1Control::Control, this);
+#endif
+
+  report_sensor_ptr_ = unitree::common::CreateRecurrentThreadEx(
+    "report_sensor", UT_CPU_ID_NONE, static_cast<int>(report_dt_ * 1e6),
+    &G1Control::UpdateTables, this, false);
 }
 
 G1Control::~G1Control()
@@ -262,8 +258,8 @@ void G1Control::endWaiting()
 void G1Control::LowCommandWriter()
 {
   unitree_hg::msg::dds_::LowCmd_ dds_low_command{};
-  dds_low_command.mode_pr() = 0;  //joint control modes: 0 for position & 1 for rotation
-  dds_low_command.mode_machine() = 0; //robot operation modes: 0 for low-level control
+  dds_low_command.mode_pr() = 0;
+  dds_low_command.mode_machine() = mode_machine_;
   
   const std::shared_ptr<const MotorCommand> mc_tmp_ptr =
     motor_command_buffer_.GetData();
@@ -271,8 +267,7 @@ void G1Control::LowCommandWriter()
   {
     for (int i = 0; i < kNumMotors; ++i)
     {
-      dds_low_command.motor_cmd().at(i).mode() = 1; //1 for enabling & 0 for disabling joint motor control
-
+      dds_low_command.motor_cmd().at(i).mode() = 1;
       dds_low_command.motor_cmd().at(i).tau() = mc_tmp_ptr->tau_ff.at(i);
       dds_low_command.motor_cmd().at(i).q() = mc_tmp_ptr->q_ref.at(i);
       dds_low_command.motor_cmd().at(i).dq() = mc_tmp_ptr->dq_ref.at(i);
@@ -290,13 +285,15 @@ void G1Control::LowStateHandler(const void *message)
   unitree_hg::msg::dds_::LowState_ low_state =
     *(unitree_hg::msg::dds_::LowState_ *)message;
 
-  //(changes inspired from unitree_sdk2/examples/g1/low_level):
-  //validate crc on every incoming state to avoid acting on corrupted packets
   if (low_state.crc() != Crc32Core((uint32_t *)&low_state,
       (sizeof(unitree_hg::msg::dds_::LowState_) >> 2) - 1)) {
     mc_rtc::log::error("[mc_unitree] LowState CRC error — packet dropped");
     return;
   }
+
+  // update mode_machine_ from robot state
+  if (mode_machine_ != low_state.mode_machine())
+    mode_machine_ = low_state.mode_machine();
 
   RecordMotorState(low_state);
   RecordBaseState(low_state);
@@ -309,9 +306,8 @@ void G1Control::RecordMotorState(const unitree_hg::msg::dds_::LowState_ &msg)
   {
     ms_tmp.q.at(i) = msg.motor_state()[i].q();
     ms_tmp.dq.at(i) = msg.motor_state()[i].dq();
-    ms_tmp.tau.at(i) = msg.motor_state()[i].tau_est();
+    // tau not available in G1 MotorState struct
   }
-  
   motor_state_buffer_.SetData(ms_tmp);
 }
 
@@ -319,10 +315,8 @@ void G1Control::RecordBaseState(const unitree_hg::msg::dds_::LowState_ &msg)
 {
   BaseState bs_tmp;
   bs_tmp.omega = msg.imu_state().gyroscope();
-  bs_tmp.quat = msg.imu_state().quaternion();
   bs_tmp.rpy = msg.imu_state().rpy();
-  bs_tmp.acc = msg.imu_state().accelerometer();
-  
+  // quat and acc not available in G1 BaseState struct
   base_state_buffer_.SetData(bs_tmp);
 }
 
@@ -343,10 +337,6 @@ void G1Control::ReportSensors()
                       bs_tmp_ptr->omega.at(0),
                       bs_tmp_ptr->omega.at(1),
                       bs_tmp_ptr->omega.at(2));
-    mc_rtc::log::info("Accelerometer: [{:.4f}, {:.4f}, {:.4f}]",
-                      bs_tmp_ptr->acc.at(0),
-                      bs_tmp_ptr->acc.at(1),
-                      bs_tmp_ptr->acc.at(2));
   }
   if (ms_tmp_ptr)
   {
@@ -413,45 +403,55 @@ void G1Control::Control()
   {
     perror("set_sched_prio failed on MCControlUnitree2.\n");
     return;
-  } /* in art_process */
+  }
 #endif
-  
+
   MotorCommand motor_command_tmp;
-  const std::shared_ptr<const MotorState> ms_tmp_ptr =
-    motor_state_buffer_.GetData();
-  const std::shared_ptr<const BaseState> bs_tmp_ptr =
-    base_state_buffer_.GetData();
-  
-  if (!ms_tmp_ptr || !bs_tmp_ptr)
-    return;
-  
-  time_ += control_dt_;
-  
-  Vector29 q_pos, q_vel;
-  for (size_t i = 0 ; i < robot_->refJointOrder().size(); i++)
+  const bool is_loopback = (config_.network_ == "lo" || config_.network_.empty());
+
+  // q_pos and q_vel declared here so they are accessible throughout the function
+  Vector29 q_pos = Vector29::Zero();
+  Vector29 q_vel = Vector29::Zero();
+
+  if (!is_loopback)
   {
-    auto motorId = jointIdsToMotorIds[i];
-    stateIn_.qIn_[i] = ms_tmp_ptr->q.at(motorId);
-    stateIn_.dqIn_[i] = ms_tmp_ptr->dq.at(motorId);
-    stateIn_.tauIn_[i] = ms_tmp_ptr->tau.at(motorId);
-    
-    q_pos[i] = ms_tmp_ptr->q.at(motorId);
-    q_vel[i] = ms_tmp_ptr->dq.at(motorId);
+    const std::shared_ptr<const MotorState> ms_tmp_ptr = motor_state_buffer_.GetData();
+    const std::shared_ptr<const BaseState> bs_tmp_ptr = base_state_buffer_.GetData();
+
+    if (!ms_tmp_ptr || !bs_tmp_ptr)
+      return;
+
+    time_ += control_dt_;
+
+    for (size_t i = 0; i < robot_->refJointOrder().size(); i++)
+    {
+      auto motorId = jointIdsToMotorIds[i];
+      stateIn_.qIn_[i] = ms_tmp_ptr->q.at(motorId);
+      stateIn_.dqIn_[i] = ms_tmp_ptr->dq.at(motorId);
+      stateIn_.tauIn_[i] = 0.0; // tau not available on G1
+      q_pos[i] = ms_tmp_ptr->q.at(motorId);
+      q_vel[i] = ms_tmp_ptr->dq.at(motorId);
+    }
+
+    for (int i = 0; i < 3; i++)
+    {
+      stateIn_.rpyIn_[i] = bs_tmp_ptr->rpy.at(i);
+      stateIn_.accIn_[i] = 0.0; // not available on G1
+      stateIn_.rateIn_[i] = bs_tmp_ptr->omega.at(i);
+    }
+    stateIn_.quatIn_.setIdentity(); // not available on G1
   }
-  q_pos[robot_->refJointOrder().size()] = 0.0;
-  q_vel[robot_->refJointOrder().size()] = 0.0;
-  
-  for (int i = 0 ; i < 3 ; i++)
+  else
   {
-    stateIn_.rpyIn_[i] = bs_tmp_ptr->rpy.at(i);
-    stateIn_.accIn_[i] = bs_tmp_ptr->acc.at(i);
-    stateIn_.rateIn_[i] = bs_tmp_ptr->omega.at(i);
+    // loopback: stateIn_ already populated via loopbackState() or setInitialState()
+    time_ += control_dt_;
+    for (size_t i = 0; i < robot_->refJointOrder().size(); i++)
+    {
+      q_pos[i] = static_cast<float>(stateIn_.qIn_[i]);
+      q_vel[i] = static_cast<float>(stateIn_.dqIn_[i]);
+    }
   }
-  for (int i = 0 ; i < 4 ; i++)
-  {
-    stateIn_.quatIn_.coeffs()[i] = bs_tmp_ptr->quat.at(i);
-  }
-  
+
   // Check if joints are too close from position limits
   const bool lim_lower = ((q_pos - q_lim_lower_).array() < 0.0).any();
   const bool lim_upper = ((q_pos - q_lim_upper_).array() > 0.0).any();
@@ -461,9 +461,18 @@ void G1Control::Control()
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))
   {
-    status_ = STATUS_WAITING_AIR;
-    std::thread wait_thread(waiting, this);
-    wait_thread.detach();
+    if (is_loopback)
+    {
+      // skip waiting states in loopback, go straight to run
+      time_run_ = -control_dt_;
+      status_ = STATUS_GAIN_TRANSITION;
+    }
+    else
+    {
+      status_ = STATUS_WAITING_AIR;
+      std::thread wait_thread(waiting, this);
+      wait_thread.detach();
+    }
   }
   
   switch (status_)
@@ -471,9 +480,8 @@ void G1Control::Control()
   case STATUS_RUN:
   {
     // If limits are breached, go to damping mode
-    if (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper)
+    if (!is_loopback && (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper))
     {
-
       const int n = joint_names_.size();
       if (lim_lower)
       {
@@ -565,14 +573,13 @@ void G1Control::Control()
       }
       break;
     }
-    mc_rtc::log::error("[mc_unitree] Unknown control mode!");   // no break; executed => no if cond met
+    mc_rtc::log::error("[mc_unitree] Unknown control mode!");
     status_ = STATUS_DAMPING;
     break;
   }
   
   case STATUS_WAITING_AIR:
   {
-    // Wait at default configuration
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
       auto motorId = jointIdsToMotorIds[i];
@@ -587,7 +594,6 @@ void G1Control::Control()
   
   case STATUS_WAITING_GRD:
   {
-    // Wait at default configuration
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
       auto motorId = jointIdsToMotorIds[i];
@@ -602,10 +608,7 @@ void G1Control::Control()
   
   case STATUS_GAIN_TRANSITION:
   {
-    // Interpolation from waiting gains to policy gains
     time_run_ += control_dt_;
-    
-    // Slowly switch PD gains to policy gains
     float alpha = time_run_ / interp_duration_;
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
@@ -616,8 +619,6 @@ void G1Control::Control()
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
-    
-    // If transition is over, switch to the policy
     if (time_run_ >= interp_duration_)
     {
       time_run_ = -control_dt_;
@@ -628,7 +629,6 @@ void G1Control::Control()
   
   case STATUS_INIT:
   {
-    // Slowly move to default configuration
     float ratio = std::clamp(time_, 0.f, init_duration_) / init_duration_;
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
@@ -637,9 +637,9 @@ void G1Control::Control()
       motor_command_tmp.kd.at(motorId) = kd_wait_(i);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
-      
-      float q_des = (q_init_(i) - ms_tmp_ptr->q.at(motorId)) * ratio +
-        ms_tmp_ptr->q.at(motorId);
+      // interpolate from current q to q_init
+      float q_current = static_cast<float>(stateIn_.qIn_[i]);
+      float q_des = (q_init_(i) - q_current) * ratio + q_current;
       motor_command_tmp.q_ref.at(motorId) = q_des;
     }
     break;
@@ -647,43 +647,45 @@ void G1Control::Control()
   
   default:
   { // case STATUS_DAMPING:
-    // Emergency damping, no Kp, only Kd with 0 ref vel
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
     {
       auto motorId = jointIdsToMotorIds[i];
       motor_command_tmp.kp.at(motorId) = 0.f;
       motor_command_tmp.kd.at(motorId) = kd_(i);
-      motor_command_tmp.q_ref.at(motorId) = ms_tmp_ptr->q.at(motorId);
+      motor_command_tmp.q_ref.at(motorId) = static_cast<float>(stateIn_.qIn_[i]);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
   }
   }
+
   // Write to command buffer
   motor_command_buffer_.SetData(motor_command_tmp);
   
-  // Log sensors and commands
+  // Log estimated torques
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
   {
     auto motorId = jointIdsToMotorIds[i];
     tau_des_[i] =
       motor_command_tmp.kp.at(motorId) *
-      (motor_command_tmp.q_ref.at(motorId) - ms_tmp_ptr->q.at(motorId)) +
+      (motor_command_tmp.q_ref.at(motorId) - static_cast<float>(stateIn_.qIn_[i])) +
       motor_command_tmp.kd.at(motorId) *
-      (motor_command_tmp.dq_ref.at(motorId) - ms_tmp_ptr->dq.at(motorId)) +
+      (motor_command_tmp.dq_ref.at(motorId) - static_cast<float>(stateIn_.dqIn_[i])) +
       motor_command_tmp.tau_ff.at(motorId);
+  }
+
+  // In loopback mode, feed commands back as state
+  if (is_loopback)
+  {
+    loopbackState(cmdOut_);
   }
 }
 
 /**
  * @brief Set initial state values for simulation
- * 
- * @param stance Value defined by RobotModule
- * @param state Current sensor values information
  */
 void G1Control::setInitialState(const std::map<std::string, std::vector<double>> & stance)
 {
-  /* Start stance */
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
   {
     const std::string & jname = robot_->refJointOrder()[i];
@@ -702,22 +704,17 @@ void G1Control::setInitialState(const std::map<std::string, std::vector<double>>
     stateIn_.tauIn_[jointId] = 0.0;
   }
   
-  /* Set body(imu) sensor values */
   stateIn_.rpyIn_.setZero();
   stateIn_.quatIn_.setIdentity();
   stateIn_.accIn_.setZero();
   stateIn_.rateIn_.setZero();
-};
+}
 
 /**
  * @brief Loop back the value of "data" to "state"
- * 
- * @param data Command data for sending to G1 robot
- * @param state Current sensor values information
  */
 void G1Control::loopbackState(const G1CommandData & data)
 {
-  /*  Set current sensor values */
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
   {
     stateIn_.qIn_[i] = data.qOut_[i];
@@ -743,4 +740,4 @@ void G1Control::setControlMode(const std::string &mode) {
   else {
     mc_rtc::log::error("{} ControlMode not supported", mode);
   }
-} 
+}

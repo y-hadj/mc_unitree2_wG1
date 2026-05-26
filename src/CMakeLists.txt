@@ -123,7 +123,6 @@ if (GENERATE_G1_CONTROLLER)
   message(STATUS "unitree_sdk2 directory set to: ${UNITREE_SDK2_SRC_DIR}")
   include_directories(
     ${UNITREE_SDK2_SRC_DIR}/example
-    ${UNITREE_SDK2_SRC_DIR}/example/g1/low_level/utils 
     ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
   )
   
