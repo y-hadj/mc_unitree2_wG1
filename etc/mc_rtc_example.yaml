@@ -3,7 +3,7 @@
 # This is an example configuration file
 MainRobot: G1_29dof #H1
 
-Enabled: Posture 
+Enabled: G1TaskController #Posture
 
 Unitree:
   g1_29dof:

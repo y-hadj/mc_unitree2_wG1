@@ -1,11 +1,10 @@
 option(GENERATE_GO2_CONTROLLER "Build Go2 controller" OFF)
 option(GENERATE_H1_CONTROLLER "Build H1 controller" OFF)
 option(GENERATE_G1_CONTROLLER "Build G1 controller" OFF)
+option(GENERATE_G1_REVO2_CONTROLLER "Build G1_Revo2 controller" ON)
 
 # // ===============================================================================================================
 # // TODO.
-# // 1. verify if CLI11::CLI11 should be inside target_link_libraries() or add_executables()
-# // 2. shouldn't it be motors.hpp not motor.cpp in ${UNITREE_SDK2_SRC_DIR}/example/g1/low_level/ ??
 # // ===============================================================================================================
 
 option(ENABLE_RT_PREEMPT "Create thread on RT preemt kernel" OFF)
@@ -143,6 +142,45 @@ if (GENERATE_G1_CONTROLLER)
   )
   
   install(TARGETS ${G1_CONTROLLER_NAME} DESTINATION bin)
+  
+endif()
+
+
+if (GENERATE_G1_REVO2_CONTROLLER)
+  
+  set(G1_REVO2_CONTROLLER_NAME MCControlG1Revo2)
+  set(G1_REVO2_HEADERS
+    G1Revo2Control.h
+  )
+  
+  set(G1_REVO2_SOURCES
+    main_g1revo2.cpp
+    G1Revo2Control.cpp
+  )
+
+  message(STATUS "unitree_sdk2 directory set to: ${UNITREE_SDK2_SRC_DIR}")
+  include_directories(
+    ${UNITREE_SDK2_SRC_DIR}/example
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libfort
+  )
+  
+  add_executable(${G1_REVO2_CONTROLLER_NAME}
+    ${SOURCES}
+    ${G1_REVO2_SOURCES}
+    # CLI11::CLI11
+  )
+  
+  target_link_libraries(${G1_REVO2_CONTROLLER_NAME}
+    PUBLIC
+    pthread
+    mc_rtc::mc_control
+    Boost::program_options
+    unitree_sdk2
+    fort
+    CLI11::CLI11
+  )
+  
+  install(TARGETS ${G1_REVO2_CONTROLLER_NAME} DESTINATION bin)
   
 endif()
 
