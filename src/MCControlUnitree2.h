@@ -82,7 +82,7 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
   if(!unitreeConfig.has(robot_name))
   {
     mc_rtc::log::error(
-      "[mc_unitree] A name that matches the controller robot name is not defined in the configuration file. The wrong name is {}",robot_name);
+      "[mc_unitree] A name that matches the controller robot name is not defined in the configuration file. The missing name is {}",robot_name);
     return;
   }
   

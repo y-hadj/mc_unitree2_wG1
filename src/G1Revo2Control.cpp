@@ -33,11 +33,11 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
     mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree configuration. Dumping the loaded config file: {}", gconfig.config.dump());
   }
   auto unitree_config = gconfig.config("Unitree");
-  if(!unitree_config.has("g1_revo2"))
+  if(!unitree_config.has("g1_29dof_revo2"))
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("[mc_unitree] Missing Unitree G1 configuration");
   }
-  auto g1_config = unitree_config("g1_revo2");
+  auto g1_config = unitree_config("g1_29dof_revo2");
   
   // q_init, q_lim_lower, q_lim_upper will be overwritten by definition in mc_g1 and urdf
   if(g1_config.has("q_init"))
@@ -300,6 +300,7 @@ void G1Revo2Control::LowCommandWriter()
 
 void G1Revo2Control::LowStateHandler(const void *message)
 {
+  mc_rtc::log::info("[mc_unitree] LowStateHandler called");
   //for g1 msg
   unitree_hg::msg::dds_::LowState_ low_state =
     *(unitree_hg::msg::dds_::LowState_ *)message;
@@ -314,12 +315,14 @@ void G1Revo2Control::LowStateHandler(const void *message)
   if (mode_machine_ != low_state.mode_machine())
     mode_machine_ = low_state.mode_machine();
 
-  g1_state_buffer_.SetData(low_state); //store raw dds messages for the G1 joints
+  // g1_state_buffer_.SetData(low_state); //store raw dds messages for the G1 joints
+  RecordMotorState(low_state);
   RecordBaseState(low_state);
 }
 
 void G1Revo2Control::LowStateHandler_Revo2(const void *message_revo2)
 {
+  mc_rtc::log::info("[mc_unitree] LowStateHandler_Revo2 called");
   //for revo2 msg
   unitree_go::msg::dds_::LowState_ low_state_revo2 =
     *(unitree_go::msg::dds_::LowState_ *)message_revo2;
@@ -451,23 +454,27 @@ void G1Revo2Control::Control()
 
   if (!is_loopback)
   {
-    const auto g1_ptr = g1_state_buffer_.GetData();
+    const auto g1_ptr = motor_state_buffer_.GetData();
     const auto revo2_ptr = revo2_state_buffer_.GetData();
     const std::shared_ptr<const BaseState> bs_tmp_ptr = base_state_buffer_.GetData();
 
     if (!g1_ptr || !revo2_ptr || !bs_tmp_ptr)
+    {
+      if (!g1_ptr) mc_rtc::log::warning("[mc_unitree] No G1 state data");
+      if (!revo2_ptr) mc_rtc::log::warning("[mc_unitree] No Revo2 state data");
+      if (!bs_tmp_ptr) mc_rtc::log::warning("[mc_unitree] No base state data");
       return;
-
+    }
     time_ += control_dt_;
 
     //for g1 joints
     for (size_t i = 0; i < 29; i++)
     {
-      stateIn_.qIn_[i] = g1_ptr->motor_state()[i].q();
-      stateIn_.dqIn_[i] = g1_ptr->motor_state()[i].dq();
-      stateIn_.tauIn_[i] = g1_ptr->motor_state()[i].tau_est();
-      q_pos[i] = g1_ptr->motor_state()[i].q();
-      q_vel[i] = g1_ptr->motor_state()[i].dq();
+      stateIn_.qIn_[i] = g1_ptr->q.at(i);
+      stateIn_.dqIn_[i] = g1_ptr->dq.at(i);
+      stateIn_.tauIn_[i] = g1_ptr->tau.at(i);
+      q_pos[i] = g1_ptr->q.at(i);
+      q_vel[i] = g1_ptr->dq.at(i);
     }
 
     //for revo2 joints

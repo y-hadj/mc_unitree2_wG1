@@ -64,7 +64,7 @@ int main(int argc, char * argv[])
   if(g_controller.robot().name() != module_name)
   {
     mc_rtc::log::error(
-        "[mc_unitree] This program can only handle '" + mc_unitree::ROBOT_NAME + "' at the moment");
+        "[mc_unitree] This program can only handle '" + mc_unitree::ROBOT_NAME + "' at the moment. (module name = {} while robot name = {})",module_name,g_controller.robot().name());
     return 1;
   }
   

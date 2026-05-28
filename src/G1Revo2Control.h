@@ -54,7 +54,7 @@ using Vector3 = Eigen::Vector3d;
 
 namespace mc_unitree
 {
-  const std::string ROBOT_NAME = "G1_Revo2"; //was g1
+  const std::string ROBOT_NAME = "g1_29dof_revo2"; //was g1
   
   const int jointIdsToMotorIds[41] =
     {JointIndex::LeftHipPitch,
