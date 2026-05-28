@@ -130,7 +130,7 @@ struct G1Revo2ConfigParameter
     0.0, 0.0,
     0.0, 0.0, 0.0, 0.0,
     0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0
   };          
 
   // Limits defined by Unitree (from g1_mj_description/xml)
@@ -252,6 +252,7 @@ struct G1Revo2ConfigParameter
     2.0, 2.0, 2.0,
     2.0,
     2.0, 2.0, 2.0,
+    1.0, 1.2,
     1.0, 1.0, 1.0, 0.8,
     1.0, 1.2,
     1.0, 1.0, 1.0, 0.8

@@ -261,8 +261,7 @@ void G1Revo2Control::LowCommandWriter()
   dds_low_command.mode_machine() = mode_machine_;
 
   unitree_go::msg::dds_::LowCmd_ dds_low_command_revo2{};
-  dds_low_command_revo2.mode_pr() = 0;
-  dds_low_command_revo2.mode_machine() = mode_machine_;
+  dds_low_command_revo2.level_flag() = 0xFF;
   
   const std::shared_ptr<const MotorCommand> mc_tmp_ptr =
     motor_command_buffer_.GetData();
