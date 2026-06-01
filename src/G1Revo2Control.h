@@ -358,8 +358,8 @@ private:
   
   /*subscriber*/
   unitree::robot::ChannelSubscriberPtr<unitree_hg::msg::dds_::LowState_> lowstate_subscriber_;
-  std::shared_ptr<unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>> handstate_subscriber_left_;
-  std::shared_ptr<unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>> handstate_subscriber_right_;
+  unitree::robot::ChannelSubscriberPtr<unitree_go::msg::dds_::MotorStates_> handstate_subscriber_left_;
+  unitree::robot::ChannelSubscriberPtr<unitree_go::msg::dds_::MotorStates_> handstate_subscriber_right_;
 
 
   DataBuffer<unitree_hg::msg::dds_::LowState_> g1_state_buffer_;

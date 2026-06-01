@@ -171,6 +171,7 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
     unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
     mc_rtc::log::info("Initialize channel factory.");
     
+    //cmd pub init
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_hg::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
     lowcmd_publisher_->InitChannel();
@@ -186,6 +187,7 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
     command_writer_ptr_ = unitree::common::CreateRecurrentThreadEx(
       "command_writer", UT_CPU_ID_NONE, 2000, &G1Revo2Control::LowCommandWriter, this);
   
+    //state sub init
     lowstate_subscriber_.reset(
       new unitree::robot::ChannelSubscriber<unitree_hg::msg::dds_::LowState_>(TOPIC_LOWSTATE));
     lowstate_subscriber_->InitChannel(
@@ -193,12 +195,14 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
       1);
 
     handstate_subscriber_left_.reset(
-      new unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>(TOPIC_BRAINCO_LEFT_STATE));
-    handstate_subscriber_left_->wait_for_connection();
+      new unitree::robot::ChannelSubscriber<unitree_go::msg::dds_::MotorStates_>(TOPIC_BRAINCO_LEFT_STATE));
+    handstate_subscriber_left_->InitChannel(
+      std::bind(&G1Revo2Control::HandStateHandler_Left, this, std::placeholders::_1), 1);
 
     handstate_subscriber_right_.reset(
-      new unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>(TOPIC_BRAINCO_RIGHT_STATE));
-    handstate_subscriber_right_->wait_for_connection();
+      new unitree::robot::ChannelSubscriber<unitree_go::msg::dds_::MotorStates_>(TOPIC_BRAINCO_RIGHT_STATE));
+    handstate_subscriber_right_->InitChannel(
+      std::bind(&G1Revo2Control::HandStateHandler_Right, this, std::placeholders::_1), 1);
     
 #if defined(__ENABLE_RT_PREEMPT__)
     pthread_create(&control_thread_, NULL,
@@ -330,13 +334,18 @@ void G1Revo2Control::LowStateHandler(const void *message)
   RecordBaseState(low_state);
 }
 
-void G1Revo2Control::HandStateHandler_Left(const void *message) {
-  mc_rtc::log::success("HandStateHandler_Left called");
-  left_hand_state_buffer_.SetData(*(unitree_go::msg::dds_::MotorStates_*)message);
+void G1Revo2Control::HandStateHandler_Left(const void *message) 
+{
+  unitree_go::msg::dds_::MotorStates_ state =
+    *(const unitree_go::msg::dds_::MotorStates_ *)message;
+  left_hand_state_buffer_.SetData(state);
 }
-void G1Revo2Control::HandStateHandler_Right(const void *message) {
-  mc_rtc::log::success("HandStateHandler_Right called");
-  right_hand_state_buffer_.SetData(*(unitree_go::msg::dds_::MotorStates_*)message);
+
+void G1Revo2Control::HandStateHandler_Right(const void *message) 
+{
+  unitree_go::msg::dds_::MotorStates_ state =
+    *(const unitree_go::msg::dds_::MotorStates_ *)message;
+  right_hand_state_buffer_.SetData(state);
 }
 
 //PS. not used in G1Revo2Control bc g1 and revo2 motor joints are sent in different dds msg formats => it is directly integrated in G1Revo2Control::Control()
@@ -462,40 +471,37 @@ void G1Revo2Control::Control()
 
     if (!g1_ptr || !bs_tmp_ptr)
     {
-      if (!g1_ptr) mc_rtc::log::warning("[mc_unitree] No G1 state data");
-      if (!bs_tmp_ptr) mc_rtc::log::warning("[mc_unitree] No base state data");
+      if (!g1_ptr) mc_rtc::log::warning("[mc_unitree] No G1 state data. Skipping this iteration...");
+      if (!bs_tmp_ptr) mc_rtc::log::warning("[mc_unitree] No base state data. Skipping this iteration...");
       return;
     }
 
-    unitree_go::msg::dds_::MotorStates_ left_hand_state;
-    unitree_go::msg::dds_::MotorStates_ right_hand_state;
-    bool has_left_hand = false;
-    bool has_right_hand = false;
-
+    const auto left_hand_state_ptr = left_hand_state_buffer_.GetData();
+    const auto right_hand_state_ptr = right_hand_state_buffer_.GetData();
+    if (!left_hand_state_ptr || !right_hand_state_ptr)
     {
-      std::lock_guard<std::mutex> lock(handstate_subscriber_left_->mutex_);
-      if (!handstate_subscriber_left_->isTimeout()) {
-        left_hand_state = handstate_subscriber_left_->msg_;
-        has_left_hand = true;
+      mc_rtc::log::warning("[mc_unitree] No Revo2 state data. Waiting...");
+      // keep hand joints at 0, don't return — let G1 joints still run
+    }
+    else
+    {
+      for (int i = 0; i < 6; i++)
+      {
+        stateIn_.qIn_[29 + i] = norm_to_rad(29+i, left_hand_state_ptr->states()[i].q());
+        stateIn_.dqIn_[29+i] = left_hand_state_ptr->states()[i].dq();
+        stateIn_.tauIn_[29+i] = left_hand_state_ptr->states()[i].tau_est();
+        
+        stateIn_.qIn_[35 + i] = norm_to_rad(29+i, right_hand_state_ptr->states()[i].q());
+        stateIn_.dqIn_[35+i] = right_hand_state_ptr->states()[i].dq();
+        stateIn_.tauIn_[35+i] = right_hand_state_ptr->states()[i].tau_est();
+        
+        q_pos[29+i] = stateIn_.qIn_[29 + i];
+        q_pos[35+i] = stateIn_.qIn_[35 + i];
+        q_vel[29+i] = stateIn_.dqIn_[29 + i];
+        q_vel[35+i] = stateIn_.dqIn_[35 + i];
       }
     }
-    {
-      std::lock_guard<std::mutex> lock(handstate_subscriber_right_->mutex_);
-      if (!handstate_subscriber_right_->isTimeout()) {
-        right_hand_state = handstate_subscriber_right_->msg_;
-        has_right_hand = true;
-      }
-    }
 
-    // if (!has_left_hand || !has_right_hand)
-    // {
-    //   static bool hand_warned = false;
-    //   if (!hand_warned)
-    //   {
-    //     mc_rtc::log::warning("[mc_unitree] No Revo2 state data yet — finger joints held at zero until data arrives");
-    //     hand_warned = true;
-    //   }
-    // }
     time_ += control_dt_;
 
     //for g1 joints
@@ -506,32 +512,6 @@ void G1Revo2Control::Control()
       stateIn_.tauIn_[i] = g1_ptr->tau.at(i);
       q_pos[i] = g1_ptr->q.at(i);
       q_vel[i] = g1_ptr->dq.at(i);
-    }
-
-    //for left revo2 joints
-    for (int i = 0; i < 6; ++i)
-    {
-      int idx = 29 + i;
-      if (has_left_hand && (int)left_hand_state.states().size() > i) {
-        stateIn_.qIn_[idx] = norm_to_rad(idx, left_hand_state.states()[i].q());
-        stateIn_.dqIn_[idx] = left_hand_state.states()[i].dq();
-        stateIn_.tauIn_[idx] = left_hand_state.states()[i].tau_est();
-      }
-      q_pos[idx] = stateIn_.qIn_[idx];
-      q_vel[idx] = stateIn_.dqIn_[idx];
-    }
-
-    //for right revo2 joints
-    for (int i = 0; i < 6; ++i)
-    {
-      int idx = 35 + i;
-      if (has_right_hand && (int)right_hand_state.states().size() > i) {
-        stateIn_.qIn_[idx] = norm_to_rad(idx, right_hand_state.states()[i].q());
-        stateIn_.dqIn_[idx] = right_hand_state.states()[i].dq();
-        stateIn_.tauIn_[idx] = right_hand_state.states()[i].tau_est();
-      }
-      q_pos[idx] = stateIn_.qIn_[idx];
-      q_vel[idx] = stateIn_.dqIn_[idx];
     }
 
     //for imu measurements
