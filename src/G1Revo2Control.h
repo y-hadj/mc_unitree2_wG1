@@ -6,6 +6,7 @@
 #include <Eigen/Core>
 #include <vector>
 #include <map>
+#include <dds/dds.h>
 
 #include <lib/fort.hpp>
 
@@ -18,12 +19,14 @@
 
 #include <unitree/robot/channel/channel_publisher.hpp>
 #include <unitree/robot/channel/channel_subscriber.hpp>
+#include <unitree/dds_wrapper/common/Publisher.h>
+#include <unitree/dds_wrapper/common/Subscription.h>
 #include <unitree/common/time/time_tool.hpp>
 #include <unitree/common/thread/thread.hpp>
 #include <unitree/idl/hg/LowState_.hpp>                   
 #include <unitree/idl/hg/LowCmd_.hpp>
-#include <unitree/idl/go2/LowState_.hpp>                   
-#include <unitree/idl/go2/LowCmd_.hpp>
+#include <unitree/idl/go2/MotorCmds_.hpp>
+#include <unitree/idl/go2/MotorStates_.hpp>
 
 
 #include <g1/low_level/utils/base_state.h>
@@ -350,17 +353,22 @@ private:
   uint8_t mode_machine_ = 0;
   /*publisher*/
   unitree::robot::ChannelPublisherPtr<unitree_hg::msg::dds_::LowCmd_> lowcmd_publisher_;
-  unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::LowCmd_> lowcmd_publisher_revo2;
+  unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::MotorCmds_> handcmd_publisher_left_;
+  unitree::robot::ChannelPublisherPtr<unitree_go::msg::dds_::MotorCmds_> handcmd_publisher_right_;
+  
   /*subscriber*/
   unitree::robot::ChannelSubscriberPtr<unitree_hg::msg::dds_::LowState_> lowstate_subscriber_;
-  unitree::robot::ChannelSubscriberPtr<unitree_go::msg::dds_::LowState_> lowstate_subscriber_revo2;
+  std::shared_ptr<unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>> handstate_subscriber_left_;
+  std::shared_ptr<unitree::robot::SubscriptionBase<unitree_go::msg::dds_::MotorStates_>> handstate_subscriber_right_;
+
+
+  DataBuffer<unitree_hg::msg::dds_::LowState_> g1_state_buffer_;
+  DataBuffer<unitree_go::msg::dds_::MotorStates_> left_hand_state_buffer_;
+  DataBuffer<unitree_go::msg::dds_::MotorStates_> right_hand_state_buffer_;
   
   DataBuffer<MotorState> motor_state_buffer_;
   DataBuffer<MotorCommand> motor_command_buffer_;
   DataBuffer<BaseState> base_state_buffer_;
-
-  DataBuffer<unitree_hg::msg::dds_::LowState_> g1_state_buffer_;       // g1 input
-  DataBuffer<unitree_go::msg::dds_::LowState_> revo2_state_buffer_;    // revo2 input (separate from g1)
   
   /*! Map from joint order to mc_rtc jointId, because mc_rtc jointId is not defined from 0 */
   std::vector<int> refJointOrderToMCJointId_;
@@ -496,7 +504,8 @@ public:
   
   // receives lowstate msg and record base and motor state from it
   void LowStateHandler(const void *message);
-  void LowStateHandler_Revo2(const void *message_revo2);
+  void HandStateHandler_Left(const void *message);
+  void HandStateHandler_Right(const void *message);
   
   // control the robot
   void Control();

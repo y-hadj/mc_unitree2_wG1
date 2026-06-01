@@ -1,7 +1,7 @@
 option(GENERATE_GO2_CONTROLLER "Build Go2 controller" OFF)
 option(GENERATE_H1_CONTROLLER "Build H1 controller" OFF)
 option(GENERATE_G1_CONTROLLER "Build G1 controller" OFF)
-option(GENERATE_G1_REVO2_CONTROLLER "Build G1_Revo2 controller" ON)
+option(GENERATE_G1_REVO2_CONTROLLER "Build G1_Revo2 controller" OFF)
 
 # // ===============================================================================================================
 # // TODO.
