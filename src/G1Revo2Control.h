@@ -49,59 +49,37 @@ using Vector41 = Eigen::Matrix<float, 41, 1>;
 using Vector3 = Eigen::Vector3d;
 
 
-// ===============================================================================================================
-// TODO.
-// 1. Create a separate motors.hpp for G1Revo2 variant
-// 2. Check that LowState_.hpp and LowCmd_.hpp are compatible with G1Revo2 variant
-// ===============================================================================================================
-
 namespace mc_unitree
 {
   const std::string ROBOT_NAME = "g1_29dof_revo2"; //was g1
-  
-  const int jointIdsToMotorIds[41] =
-    {JointIndex::LeftHipPitch,
-     JointIndex::LeftHipRoll,
-     JointIndex::LeftHipYaw,
-     JointIndex::LeftKnee,
-     JointIndex::LeftAnklePitch,
-     JointIndex::LeftAnkleRoll,
-     JointIndex::RightHipPitch,
-     JointIndex::RightHipRoll,
-     JointIndex::RightHipYaw,
-     JointIndex::RightKnee,
-     JointIndex::RightAnklePitch,
-     JointIndex::RightAnkleRoll,
-     JointIndex::WaistYaw,
-     JointIndex::WaistRoll,
-     JointIndex::WaistPitch,
-     JointIndex::LeftShoulderPitch,
-     JointIndex::LeftShoulderRoll,
-     JointIndex::LeftShoulderYaw,
-     JointIndex::LeftElbow,
-     JointIndex::LeftWristRoll,
-     JointIndex::LeftWristPitch,
-     JointIndex::LeftWristYaw,
-     JointIndex::RightShoulderPitch,
-     JointIndex::RightShoulderRoll,
-     JointIndex::RightShoulderYaw,
-     JointIndex::RightElbow,
-     JointIndex::RightWristRoll,
-     JointIndex::RightWristPitch,
-     JointIndex::RightWristYaw,
-     JointIndex::left_thumb_metacarpal_joint,
-     JointIndex::left_thumb_proximal_joint,
-     JointIndex::left_index_proximal_joint,
-     JointIndex::left_middle_proximal_joint,
-     JointIndex::left_ring_proximal_joint,
-     JointIndex::left_pinky_proximal_joint,
-     JointIndex::right_thumb_metacarpal_joint,
-     JointIndex::right_thumb_proximal_joint,
-     JointIndex::right_index_proximal_joint,
-     JointIndex::right_middle_proximal_joint,
-     JointIndex::right_ring_proximal_joint,
-     JointIndex::right_pinky_proximal_joint
-    };
+
+  /** Joint name of each motor, indexed by motor id (JointIndex).
+   *
+   * The robot's refJointOrder cannot be used as a motor index: the Revo2 hands
+   * contribute passive distal joints so refJointOrder has 51 joints while
+   * the robot has 41 motors. Mapping is therefore done by name, via
+   * rjoToMotorId_ / motorIdToRjo_ built in the constructor.
+   */
+  const std::array<std::string, 41> motorJointNames = {
+    "left_hip_pitch_joint",        "left_hip_roll_joint",         "left_hip_yaw_joint",
+    "left_knee_joint",             "left_ankle_pitch_joint",      "left_ankle_roll_joint",
+    "right_hip_pitch_joint",       "right_hip_roll_joint",        "right_hip_yaw_joint",
+    "right_knee_joint",            "right_ankle_pitch_joint",     "right_ankle_roll_joint",
+    "waist_yaw_joint",             "waist_roll_joint",            "waist_pitch_joint",
+    "left_shoulder_pitch_joint",   "left_shoulder_roll_joint",    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",       "left_wrist_pitch_joint",      "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",  "right_shoulder_roll_joint",   "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",      "right_wrist_pitch_joint",     "right_wrist_yaw_joint",
+    "left_thumb_metacarpal_joint", "left_thumb_proximal_joint",
+    "left_index_proximal_joint",   "left_middle_proximal_joint",
+    "left_ring_proximal_joint",    "left_pinky_proximal_joint",
+    "right_thumb_metacarpal_joint","right_thumb_proximal_joint",
+    "right_index_proximal_joint",  "right_middle_proximal_joint",
+    "right_ring_proximal_joint",   "right_pinky_proximal_joint"
+  };
+
   
 /**
  * @brief Configuration file parameters for mc_unitree
@@ -111,7 +89,6 @@ struct G1Revo2ConfigParameter
   G1Revo2ConfigParameter()
   : network_(""), mode_(ControlMode::Position)
   {}
-  /* Communication information with a real robot */
   /* Connection network */
   std::string network_;
   /* ControlMode : Position/Velocity/Torque (Velocity is not supported)*/
@@ -373,7 +350,12 @@ private:
   /*! Map from joint order to mc_rtc jointId, because mc_rtc jointId is not defined from 0 */
   std::vector<int> refJointOrderToMCJointId_;
   std::unordered_map<int, int> mcJointIdToJointId_;
-  
+
+  // refJointOrder index -> motor id, or -1 when the joint has no motor.
+  //  The Revo2 passive distal joints (URDF <mimic>) are the -1 entries. 
+  std::vector<int> rjoToMotorId_;
+  std::array<int, kNumMotors> motorIdToRjo_ = {};
+
   Vector41 q_init_;
   Vector41 q_lim_lower_;
   Vector41 q_lim_upper_;

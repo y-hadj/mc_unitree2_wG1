@@ -3,13 +3,6 @@
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
 #include "G1Revo2Control.h"
 
-// ===============================================================================================================
-// TODO.
-// 1. change dds_low_command_revo2.mode_pr() and dds_low_command_revo2.mode_machine() to adapt to revo2
-// msg format (unitree go2 messages, base code from how it was done in the H1 controller), do the same for 
-// dds_low_command_revo2.motor_cmd().at(i).mode()
-// ===============================================================================================================
-
 using namespace mc_unitree;
 
 /**
@@ -135,26 +128,61 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
   cmdOut_.tauOut_.resize(robot->refJointOrder().size(), 0.0);
   cmdOut_.kpOut_.resize(robot->refJointOrder().size());
   cmdOut_.kdOut_.resize(robot->refJointOrder().size());
+  
+  // map refJointOrder <-> motor id by joint name
+  rjoToMotorId_.assign(robot->refJointOrder().size(), -1);
+  motorIdToRjo_.fill(-1);
+  for (size_t i = 0 ; i < robot->refJointOrder().size() ; i++)
+  {
+    const std::string & jname = robot->refJointOrder()[i];
+    for (size_t m = 0 ; m < static_cast<size_t>(kNumMotors) ; ++m)
+    {
+      if (jname == motorJointNames[m])
+      {
+        rjoToMotorId_[i] = static_cast<int>(m);
+        motorIdToRjo_[m] = static_cast<int>(i);
+        break;
+      }
+    }
+  }
+  for (size_t m = 0 ; m < static_cast<size_t>(kNumMotors) ; ++m)
+  {
+    if (motorIdToRjo_[m] < 0)
+    {
+      mc_rtc::log::error_and_throw<std::runtime_error>(
+        "[mc_unitree] motor {} ({}) is not in the reference joint order of {}",
+        m, motorJointNames[m], robot->name());
+    }
+  }
+  {
+    const size_t passive = robot->refJointOrder().size() - static_cast<size_t>(kNumMotors);
+    mc_rtc::log::info("[mc_unitree] G1Revo2 mapped {} motors, {} passive joint(s) not commanded",
+                      kNumMotors, passive);
+  }
+
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
   {
-    cmdOut_.kpOut_[i] = kp_[i];
-    cmdOut_.kdOut_[i] = kd_[i];
+    const int motorId = rjoToMotorId_[i];
+    if (motorId < 0) continue;
+    cmdOut_.kpOut_[i] = kp_[motorId];
+    cmdOut_.kdOut_[i] = kd_[motorId];
   }
-  
-  refJointOrderToMCJointId_.resize(kNumMotors, -1);
+
+  refJointOrderToMCJointId_.resize(robot->refJointOrder().size(), -1);
   for (size_t i = 0 ; i < robot->refJointOrder().size() ; i++)
   {
     const std::string & jname = robot_->refJointOrder()[i];
     auto mcJointId = robot->jointIndexByName(jname);
     if (robot->mbc().q[mcJointId].empty())
       continue;
-    
+
     refJointOrderToMCJointId_[i] = mcJointId;
     mcJointIdToJointId_[mcJointId] = i;
-    /* Overrite initial q_init_ if stance is set and not provided by the config file */
-    if(robot->stance().count(jname) && !g1_config.has("q_init"))
+    // overrite initial q_init_ if stance is set and not provided by the config file
+    const int motorId = rjoToMotorId_[i];
+    if(motorId >= 0 && robot->stance().count(jname) && !g1_config.has("q_init"))
     {
-      q_init_(i) = robot->stance().at(jname)[0];
+      q_init_(motorId) = robot->stance().at(jname)[0];
     }
   }
 
@@ -280,7 +308,7 @@ void G1Revo2Control::LowCommandWriter()
     motor_command_buffer_.GetData();
   if (mc_tmp_ptr)
   {
-    //g1 joints: joints 0-28
+    //g1 joints
     for (int i = 0; i < 29; ++i) 
     {
       dds_low_command.motor_cmd().at(i).mode() = 1;
@@ -294,7 +322,7 @@ void G1Revo2Control::LowCommandWriter()
                                       (sizeof(dds_low_command) >> 2) - 1);
     lowcmd_publisher_->Write(dds_low_command);
 
-    //left revo2: joints 29-34
+    //left revo2
     for (int i = 0; i < 6; ++i)
     {
       dds_hand_cmd_left.cmds()[i].q()  = rad_to_norm(29+i, mc_tmp_ptr->q_ref.at(29+i));
@@ -302,7 +330,7 @@ void G1Revo2Control::LowCommandWriter()
     }
     handcmd_publisher_left_->Write(dds_hand_cmd_left);
 
-    //right revo2: joints 35-40
+    //right revo2
     for (int i = 0; i < 6; ++i)
     {
       dds_hand_cmd_right.cmds()[i].q()  = rad_to_norm(35+i, mc_tmp_ptr->q_ref.at(35+i));
@@ -391,16 +419,17 @@ void G1Revo2Control::ReportSensors()
   }
   if (ms_tmp_ptr)
   {
+    // report in motor order
     mc_rtc::log::info("Joint positions: [");
-    for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
+    for (size_t m = 0; m < static_cast<size_t>(kNumMotors); ++m)
     {
-      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->q.at(jointIdsToMotorIds[i]));
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->q.at(m));
     }
     mc_rtc::log::info("]");
     mc_rtc::log::info("Joint velocities: [");
-    for (size_t i = 0; i < robot_->refJointOrder().size(); ++i)
+    for (size_t m = 0; m < static_cast<size_t>(kNumMotors); ++m)
     {
-      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->dq.at(jointIdsToMotorIds[i]));
+      mc_rtc::log::info("{:.4f}, ", ms_tmp_ptr->dq.at(m));
     }
     mc_rtc::log::info("]");
   }
@@ -485,20 +514,24 @@ void G1Revo2Control::Control()
     }
     else
     {
+      // q_pos/q_vel are motor-indexed & stateIn_ is refJointOrder-indexed
       for (int i = 0; i < 6; i++)
       {
-        stateIn_.qIn_[29 + i] = norm_to_rad(29+i, left_hand_state_ptr->states()[i].q());
-        stateIn_.dqIn_[29+i] = left_hand_state_ptr->states()[i].dq();
-        stateIn_.tauIn_[29+i] = left_hand_state_ptr->states()[i].tau_est();
-        
-        stateIn_.qIn_[35 + i] = norm_to_rad(29+i, right_hand_state_ptr->states()[i].q());
-        stateIn_.dqIn_[35+i] = right_hand_state_ptr->states()[i].dq();
-        stateIn_.tauIn_[35+i] = right_hand_state_ptr->states()[i].tau_est();
-        
-        q_pos[29+i] = stateIn_.qIn_[29 + i];
-        q_pos[35+i] = stateIn_.qIn_[35 + i];
-        q_vel[29+i] = stateIn_.dqIn_[29 + i];
-        q_vel[35+i] = stateIn_.dqIn_[35 + i];
+        const int lMotor = 29 + i, rMotor = 35 + i;
+        const int lRjo = motorIdToRjo_[lMotor], rRjo = motorIdToRjo_[rMotor];
+
+        stateIn_.qIn_[lRjo] = norm_to_rad(lMotor, left_hand_state_ptr->states()[i].q());
+        stateIn_.dqIn_[lRjo] = left_hand_state_ptr->states()[i].dq();
+        stateIn_.tauIn_[lRjo] = left_hand_state_ptr->states()[i].tau_est();
+
+        stateIn_.qIn_[rRjo] = norm_to_rad(lMotor, right_hand_state_ptr->states()[i].q());
+        stateIn_.dqIn_[rRjo] = right_hand_state_ptr->states()[i].dq();
+        stateIn_.tauIn_[rRjo] = right_hand_state_ptr->states()[i].tau_est();
+
+        q_pos[lMotor] = stateIn_.qIn_[lRjo];
+        q_pos[rMotor] = stateIn_.qIn_[rRjo];
+        q_vel[lMotor] = stateIn_.dqIn_[lRjo];
+        q_vel[rMotor] = stateIn_.dqIn_[rRjo];
       }
     }
 
@@ -507,9 +540,10 @@ void G1Revo2Control::Control()
     //for g1 joints
     for (size_t i = 0; i < 29; i++)
     {
-      stateIn_.qIn_[i] = g1_ptr->q.at(i);
-      stateIn_.dqIn_[i] = g1_ptr->dq.at(i);
-      stateIn_.tauIn_[i] = g1_ptr->tau.at(i);
+      const int rjo = motorIdToRjo_[i];
+      stateIn_.qIn_[rjo] = g1_ptr->q.at(i);
+      stateIn_.dqIn_[rjo] = g1_ptr->dq.at(i);
+      stateIn_.tauIn_[rjo] = g1_ptr->tau.at(i);
       q_pos[i] = g1_ptr->q.at(i);
       q_vel[i] = g1_ptr->dq.at(i);
     }
@@ -532,8 +566,10 @@ void G1Revo2Control::Control()
     time_ += control_dt_;
     for (size_t i = 0; i < robot_->refJointOrder().size(); i++)
     {
-      q_pos[i] = static_cast<float>(stateIn_.qIn_[i]);
-      q_vel[i] = static_cast<float>(stateIn_.dqIn_[i]);
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue;
+      q_pos[motorId] = static_cast<float>(stateIn_.qIn_[i]);
+      q_vel[motorId] = static_cast<float>(stateIn_.dqIn_[i]);
     }
   }
 
@@ -567,7 +603,8 @@ void G1Revo2Control::Control()
     // If limits are breached, go to damping mode
     if (!is_loopback && (lim_lower || lim_upper || lim_velocity_lower || lim_velocity_upper))
     {
-      const int n = joint_names_.size();
+      // q_pos/q_vel and the limit vectors are motor-indexed 
+      const int n = kNumMotors;
       if (lim_lower)
       {
         mc_rtc::log::error("[mc_unitree] Joint lower position limit breached!");
@@ -576,7 +613,7 @@ void G1Revo2Control::Control()
           if(q_pos[i] < q_lim_lower_[i])
           {
             mc_rtc::log::error("  - {}: pos = {}, lower limit = {}", 
-                              joint_names_[i], q_pos[i], q_lim_lower_[i]);
+                              motorJointNames[i], q_pos[i], q_lim_lower_[i]);
           }
         }
       }
@@ -589,7 +626,7 @@ void G1Revo2Control::Control()
           if(q_pos[i] > q_lim_upper_[i])
           {
             mc_rtc::log::error("  - {}: pos = {}, upper limit = {}", 
-                              joint_names_[i], q_pos[i], q_lim_upper_[i]);
+                              motorJointNames[i], q_pos[i], q_lim_upper_[i]);
           }
         }
       }
@@ -602,7 +639,7 @@ void G1Revo2Control::Control()
           if(q_vel[i] < q_dot_lim_lower_[i])
           {
             mc_rtc::log::error("  - {}: vel = {}, lower vel limit = {}", 
-                              joint_names_[i], q_vel[i], q_dot_lim_lower_[i]);
+                              motorJointNames[i], q_vel[i], q_dot_lim_lower_[i]);
           }
         }
       }
@@ -615,7 +652,7 @@ void G1Revo2Control::Control()
           if(q_vel[i] > q_dot_lim_upper_[i])
           {
             mc_rtc::log::error("  - {}: vel = {}, upper vel limit = {}", 
-                              joint_names_[i], q_vel[i], q_dot_lim_upper_[i]);
+                              motorJointNames[i], q_vel[i], q_dot_lim_upper_[i]);
           }
         }
       }
@@ -638,7 +675,8 @@ void G1Revo2Control::Control()
     {
       for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
       {
-        auto motorId = jointIdsToMotorIds[i];
+        const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
         motor_command_tmp.kp.at(motorId) = cmdOut_.kpOut_[i];
         motor_command_tmp.kd.at(motorId) = cmdOut_.kdOut_[i];
         motor_command_tmp.q_ref.at(motorId) = cmdOut_.qOut_[i];
@@ -651,7 +689,8 @@ void G1Revo2Control::Control()
     {
       for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
       {
-        auto motorId = jointIdsToMotorIds[i];
+        const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
         motor_command_tmp.kp.at(motorId) = 0.f;
         motor_command_tmp.kd.at(motorId) = 0.f;
         motor_command_tmp.tau_ff.at(motorId) = cmdOut_.tauOut_[i];
@@ -667,10 +706,11 @@ void G1Revo2Control::Control()
   {
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = kp_wait_(i);
-      motor_command_tmp.kd.at(motorId) = kd_wait_(i);
-      motor_command_tmp.q_ref.at(motorId) = q_init_(i);
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
+      motor_command_tmp.kp.at(motorId) = kp_wait_(motorId);
+      motor_command_tmp.kd.at(motorId) = kd_wait_(motorId);
+      motor_command_tmp.q_ref.at(motorId) = q_init_(motorId);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
@@ -681,10 +721,11 @@ void G1Revo2Control::Control()
   {
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = kp_wait_(i);
-      motor_command_tmp.kd.at(motorId) = kd_wait_(i);
-      motor_command_tmp.q_ref.at(motorId) = q_init_(i);
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
+      motor_command_tmp.kp.at(motorId) = kp_wait_(motorId);
+      motor_command_tmp.kd.at(motorId) = kd_wait_(motorId);
+      motor_command_tmp.q_ref.at(motorId) = q_init_(motorId);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
@@ -697,10 +738,11 @@ void G1Revo2Control::Control()
     float alpha = time_run_ / interp_duration_;
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = kp_wait_(i) * (1 - alpha) + kp_(i) * alpha;
-      motor_command_tmp.kd.at(motorId) = kd_wait_(i) * (1 - alpha) + kd_(i) * alpha;
-      motor_command_tmp.q_ref.at(motorId) = q_init_(i);
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
+      motor_command_tmp.kp.at(motorId) = kp_wait_(motorId) * (1 - alpha) + kp_(motorId) * alpha;
+      motor_command_tmp.kd.at(motorId) = kd_wait_(motorId) * (1 - alpha) + kd_(motorId) * alpha;
+      motor_command_tmp.q_ref.at(motorId) = q_init_(motorId);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
     }
@@ -717,14 +759,15 @@ void G1Revo2Control::Control()
     float ratio = std::clamp(time_, 0.f, init_duration_) / init_duration_;
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
-      auto motorId = jointIdsToMotorIds[i];
-      motor_command_tmp.kp.at(motorId) = kp_wait_(i);
-      motor_command_tmp.kd.at(motorId) = kd_wait_(i);
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
+      motor_command_tmp.kp.at(motorId) = kp_wait_(motorId);
+      motor_command_tmp.kd.at(motorId) = kd_wait_(motorId);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
       // interpolate from current q to q_init
       float q_current = static_cast<float>(stateIn_.qIn_[i]);
-      float q_des = (q_init_(i) - q_current) * ratio + q_current;
+      float q_des = (q_init_(motorId) - q_current) * ratio + q_current;
       motor_command_tmp.q_ref.at(motorId) = q_des;
     }
     break;
@@ -734,9 +777,10 @@ void G1Revo2Control::Control()
   { // case STATUS_DAMPING:
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; i++)
     {
-      auto motorId = jointIdsToMotorIds[i];
+      const int motorId = rjoToMotorId_[i];
+      if (motorId < 0) continue; // passive (mimic) joint: no motor to command
       motor_command_tmp.kp.at(motorId) = 0.f;
-      motor_command_tmp.kd.at(motorId) = kd_(i);
+      motor_command_tmp.kd.at(motorId) = kd_(motorId);
       motor_command_tmp.q_ref.at(motorId) = static_cast<float>(stateIn_.qIn_[i]);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
@@ -750,8 +794,9 @@ void G1Revo2Control::Control()
   // Log estimated torques
   for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
   {
-    auto motorId = jointIdsToMotorIds[i];
-    tau_des_[i] =
+    const int motorId = rjoToMotorId_[i];
+    if (motorId < 0) continue; // passive (mimic) joint: no motor to command
+    tau_des_[motorId] =
       motor_command_tmp.kp.at(motorId) *
       (motor_command_tmp.q_ref.at(motorId) - static_cast<float>(stateIn_.qIn_[i])) +
       motor_command_tmp.kd.at(motorId) *
