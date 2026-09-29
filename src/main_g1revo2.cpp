@@ -38,11 +38,15 @@ int main(int argc, char * argv[])
   
   std::string conf_file = check_file;
   std::string network;
-  
+  bool calib = false;
+  std::string calib_set = "all";
+
   CLI::App app{"MCControlG1Revo2 options"};
   app.add_option("-n,--network", network, "Name of network adaptor")->default_val("");
   app.add_option("-f,--conf", conf_file, "Configuration file")->default_val(check_file);
-  
+  app.add_flag("--calib", calib, "actuator friction identification in the 'waiting in the air' phase.");
+  app.add_option("--calib-set", calib_set, "Subset of the calib sweep: all | arms | legs | left | right | quick (1 min test)")->default_val("all");
+
   /* Parse command line arguments */
   try
   {
@@ -73,7 +77,9 @@ int main(int argc, char * argv[])
                                 mc_unitree::G1Revo2SensorInfo,
                                 mc_unitree::G1Revo2CommandData,
                                 mc_unitree::G1Revo2ConfigParameter> mc_control_unitree(g_controller,
-                                                                                  network);
+                                                                                  network,
+                                                                                  calib,
+                                                                                  calib_set);
   
   mc_rtc::log::info("[mc_unitree] Terminated");
   

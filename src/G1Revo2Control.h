@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -35,6 +36,8 @@
 
 #include <mc_control/mc_controller.h>
 #include "MCControlUnitree2.h"
+#include "ActuatorCalibration.h"
+#include <memory>
 
 #define TOPIC_LOWCMD "rt/lowcmd"
 #define TOPIC_LOWSTATE "rt/lowstate"
@@ -406,6 +409,18 @@ private:
   /* Current sensor values information */
   G1Revo2SensorInfo stateIn_;
   
+  // Actuator friction identification (see ActuatorCalibration.h) 
+  std::unique_ptr<ActuatorCalibration> calib_;
+  std::atomic<bool> calibRequested_{false};
+  std::atomic<bool> calibRunning_{false};
+  std::atomic<bool> calibDone_{false};
+  Vector41 calibQRef_ = Vector41::Zero();
+  spdlog::level::level_enum calibPrevErrLevel_ = spdlog::level::info;
+  /** Model gravity torque g(q) per motor from the measured joints and the IMU specific force */
+  void computeGravityTorques(Vector41 & g);
+  /** One control step of the sweep; returns true while it drives the joints */
+  bool calibrationStep(const Vector41 & q_pos, const Vector41 & q_vel);
+  
   G1Revo2CommandData cmdOut_;
   
   ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -505,6 +520,12 @@ public:
   ///
   ////////////////////////////////////////////////////////////////////////////////////////////////
   void endWaiting();
+  /** --calib given and the interface is in the air phase */
+  bool calibrationOffered() const;
+  void requestCalibration() { calibRequested_ = true; }
+  bool calibrationDone() const { return calibDone_; }
+  /** Print the identification report and ask whether to write the observer yaml (blocking, stdin) */
+  void calibrationApplyPrompt();
   
   /**
    * @brief Set the initial state values for simulation

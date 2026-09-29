@@ -10,12 +10,6 @@
 
 #include "ControlMode.h"
 
-
-// ===============================================================================================================
-// TODO.
-// 1. verify that the default values are passed for pd gains when their size is bad in the config params
-// ===============================================================================================================
-
 namespace mc_unitree
 {
 /**
@@ -28,8 +22,9 @@ public:
   /**
    * @brief Interface constructor and destructor
    */
-  MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network);
-  
+  MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network,
+                    bool calib = false, const std::string & calibSet = "all");
+
   virtual ~MCControlUnitree2();
 
   /**
@@ -39,6 +34,16 @@ public:
   {
     return globalController_;
   }
+
+  /** True when the interface was started with --calib */
+  bool calibration() const noexcept { return calib_; }
+  /** --calib-set: all | arms | legs | left | right | quick */
+  const std::string & calibrationSet() const noexcept { return calibSet_; }
+  /** Push the measured state into mc_rtc and run one controller step WITHOUT
+   * extracting commands or looping anything back: used during the calibration
+   * sweep so that the observers log and the GUI shows the real robot while the
+   * interface keeps ownership of the motors. */
+  void runPassive(const RobotSensorInfo & state);
   
   void run(const RobotSensorInfo & state, RobotCommandData & cmdData);
   
@@ -59,7 +64,11 @@ private:
   
   /*! Name of network adaptor */
   std::string network_;
-  
+
+  /* --calib: actuator friction identification in the air phase (see ActuatorCalibration.h) */
+  bool calib_ = false;
+  std::string calibSet_ = "all";
+
   std::chrono::system_clock::time_point now_;
   
   mc_rtc::Logger & logger_;
@@ -69,8 +78,8 @@ private:
 
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
-MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network)
-  : globalController_(controller), network_(network),  robot_(nullptr),
+MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::MCControlUnitree2(mc_control::MCGlobalController & controller, const std::string & network, bool calib, const std::string & calibSet)
+  : globalController_(controller), network_(network), calib_(calib), calibSet_(calibSet), robot_(nullptr),
     //logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-unitree-"+controller.robot().name()),
     logger_(controller.controller().logger()),
     delay_(0.0), controller_init_once_(false)
@@ -237,6 +246,18 @@ MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigPa
 #if defined(__ENABLE_RT_PREEMPT__)
   pthread_join(lowCmdWriteThread, NULL);
 #endif
+}
+
+template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>
+void MCControlUnitree2<RobotControl, RobotSensorInfo, RobotCommandData, RobotConfigParameter>::runPassive(const RobotSensorInfo & state)
+{
+  globalController_.setSensorOrientation(Eigen::Quaterniond(mc_rbdyn::rpyToMat(state.rpyIn_)));
+  globalController_.setSensorAngularVelocity(state.rateIn_);
+  globalController_.setSensorLinearAcceleration(state.accIn_);
+  globalController_.setEncoderValues(state.qIn_);
+  globalController_.setEncoderVelocities(state.dqIn_);
+  globalController_.setJointTorques(state.tauIn_);
+  globalController_.run();
 }
 
 template <typename RobotControl, typename RobotSensorInfo, typename RobotCommandData, typename RobotConfigParameter>

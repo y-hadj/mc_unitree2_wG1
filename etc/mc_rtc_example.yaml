@@ -3,7 +3,61 @@
 # This is an example configuration file
 MainRobot: G1_Revo2 #H1
 
-Enabled: G1TaskController #Posture
+Enabled: [ismpc_walking,Posture] 
+
+Log: false
+
+
+ObserverPipelines:
+  name: MainPipeline
+  gui: true
+  log: true
+  observers:
+    - type: Encoder
+      velocity: encoderVelocities
+    - type: Attitude
+      required: true
+      update: true
+    - type: ExternalForcesObserver
+      estimation_method: MomentumObserver
+      use_forces_from_ft_sensors: false
+      torque_source_type: JointTorqueMeasurement
+      residual_gain: 10.0
+      is_active: false
+      publish_to_sensors: true # false to open the loop (observer performance without controller interference)
+      contact_wrenches:
+        - name: LeftFoot
+          body: left_ankle_roll_link
+          sensor: LeftFootForceSensor
+        - name: RightFoot
+          body: right_ankle_roll_link
+          sensor: RightFootForceSensor
+        - name: LeftHand
+          body: left_base_link
+          sensor: LeftHandForceSensor
+          start_joint: left_shoulder_pitch_joint
+          net_cop: false
+          deadband: true
+        - name: LeftHandProx
+          body: left_base_link
+          start_joint: left_shoulder_pitch_joint
+          end_joint: left_elbow_joint
+          force_only: true
+          net_cop: false
+          deadband: true
+        - name: RightHand
+          body: right_base_link
+          sensor: RightHandForceSensor
+          start_joint: right_shoulder_pitch_joint
+          net_cop: false
+          deadband: true
+        - name: RightHandProx
+          body: right_base_link
+          start_joint: right_shoulder_pitch_joint
+          end_joint: right_elbow_joint
+          force_only: true
+          net_cop: false
+          deadband: true
 
 Unitree:
   g1_29dof_revo2:

@@ -2,6 +2,13 @@
 #include <mc_rtc/logging.h>
 #include <unitree/robot/b2/motion_switcher/motion_switcher_client.hpp>
 #include "G1Revo2Control.h"
+#include <RBDyn/FD.h>
+#include <RBDyn/FK.h>
+#include <RBDyn/FV.h>
+#include <mc_rtc/path.h>
+#include <mc_rtc/gui/Robot.h>
+#include <filesystem>
+#include <iostream>
 
 using namespace mc_unitree;
 
@@ -198,7 +205,7 @@ G1Revo2Control::G1Revo2Control(MCControlUnitree2<G1Revo2Control, G1Revo2SensorIn
 
     unitree::robot::ChannelFactory::Instance()->Init(simulation, network);
     mc_rtc::log::info("Initialize channel factory.");
-    
+
     //cmd pub init
     lowcmd_publisher_.reset(
       new unitree::robot::ChannelPublisher<unitree_hg::msg::dds_::LowCmd_>(TOPIC_LOWCMD));
@@ -274,7 +281,24 @@ void waiting(G1Revo2Control *controller)
 {
   using namespace std::chrono_literals;
   std::this_thread::sleep_for(1000ms);
-  std::cin.get();
+  if(controller->calibrationOffered())
+  {
+    mc_rtc::log::info("[calib] Robot hanging? Type c + Enter to run the actuator friction identification, Enter to skip");
+    std::string line;
+    std::getline(std::cin, line);
+    if(!line.empty() && (line[0] == 'c' || line[0] == 'C'))
+    {
+      controller->requestCalibration();
+      while(!controller->calibrationDone()) { std::this_thread::sleep_for(200ms); }
+      controller->calibrationApplyPrompt();
+      mc_rtc::log::info("[calib] Done. Press Enter when the robot is ready for the next phase");
+      std::cin.get();
+    }
+  }
+  else
+  {
+    std::cin.get();
+  }
   controller->endWaiting();
 }
 
@@ -582,9 +606,9 @@ void G1Revo2Control::Control()
   // Switch to waiting after initialization
   if ((status_ == STATUS_INIT) && (time_ > init_duration_))
   {
-    if (is_loopback)
+    if (is_loopback && !mc_controller_->calibration())
     {
-      // skip waiting states in loopback, go straight to run
+      // skip waiting states in loopback, go straight to run (unless --calib: dry-run the sweep)
       time_run_ = -control_dt_;
       status_ = STATUS_GAIN_TRANSITION;
     }
@@ -704,15 +728,35 @@ void G1Revo2Control::Control()
   
   case STATUS_WAITING_AIR:
   {
+    // --calib: the sweep overrides the hold targets of the joints it drives
+    const bool calibActive = calibrationStep(q_pos, q_vel);
     for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
     {
       const int motorId = rjoToMotorId_[i];
       if (motorId < 0) continue; // passive (mimic) joint: no motor to command
       motor_command_tmp.kp.at(motorId) = kp_wait_(motorId);
       motor_command_tmp.kd.at(motorId) = kd_wait_(motorId);
-      motor_command_tmp.q_ref.at(motorId) = q_init_(motorId);
+      motor_command_tmp.q_ref.at(motorId) = calibActive ? calibQRef_(motorId) : q_init_(motorId);
       motor_command_tmp.dq_ref.at(motorId) = 0.f;
       motor_command_tmp.tau_ff.at(motorId) = 0.f;
+    }
+    if(calibActive)
+    {
+      if(is_loopback)
+      {
+        // no robot: echo our own targets as the measured state (dq by finite difference)
+        for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+        {
+          const int motorId = rjoToMotorId_[i];
+          if (motorId < 0) continue;
+          const double qn = static_cast<double>(calibQRef_(motorId));
+          stateIn_.dqIn_[i] = (qn - stateIn_.qIn_[i]) / control_dt_;
+          stateIn_.qIn_[i] = qn;
+          stateIn_.tauIn_[i] = 0.0;
+        }
+      }
+      // Run mc_rtc passively: observers log the sweep.
+      mc_controller_->runPassive(stateIn_);
     }
     break;
   }
@@ -804,8 +848,9 @@ void G1Revo2Control::Control()
       motor_command_tmp.tau_ff.at(motorId);
   }
 
-  // In loopback mode, feed commands back as state
-  if (is_loopback)
+  // In loopback mode, feed commands back as state (not during the calibration sweep,
+  // which echoes its own targets: cmdOut_ is not filled while mc_rtc runs passively)
+  if (is_loopback && !calibRunning_)
   {
     loopbackState(cmdOut_);
   }
@@ -885,4 +930,149 @@ float G1Revo2Control::rad_to_norm(int joint_idx, float rad) const {
     float lower = q_lim_lower_[joint_idx];
     float upper = q_lim_upper_[joint_idx];
     return (rad - lower) / (upper - lower);
+}
+
+// Actuator friction identification fct()
+
+bool mc_unitree::G1Revo2Control::calibrationOffered() const
+{
+  return mc_controller_->calibration() && status_ == STATUS_WAITING_AIR;
+}
+
+void mc_unitree::G1Revo2Control::computeGravityTorques(Vector41 & g)
+{
+  const auto & mb = robot_->mb();
+  rbd::MultiBodyConfig mbc = robot_->mbc(); // shape and passive joints from the control robot
+  for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+  {
+    const int mcJointId = refJointOrderToMCJointId_[i];
+    if (mcJointId < 0 || static_cast<size_t>(mcJointId) >= mbc.q.size()) continue;
+    if (mbc.q[static_cast<size_t>(mcJointId)].size() == 1) { mbc.q[static_cast<size_t>(mcJointId)][0] = stateIn_.qIn_[i]; }
+  }
+  // Root at identity: gravity is expressed in the root frame below.
+  if (!mbc.q.empty() && mbc.q[0].size() == 7) { mbc.q[0] = {1., 0., 0., 0., 0., 0., 0.}; }
+  for (auto & a : mbc.alpha) { std::fill(a.begin(), a.end(), 0.0); }
+  for (auto & a : mbc.alphaD) { std::fill(a.begin(), a.end(), 0.0); }
+  rbd::forwardKinematics(mb, mbc);
+  rbd::forwardVelocity(mb, mbc);
+  // RBDyn's mbc.gravity is the upward specific force the base "feels" (default 0,0,9.81):
+  // exactly what the IMU accelerometer reads at rest. Rotate the IMU reading into the
+  // root frame so a tilted hang does not bias g(q). Loopback (no IMU data) -> upright.
+  Eigen::Vector3d gravity(0., 0., 9.81);
+  const double an = stateIn_.accIn_.norm();
+  if (an > 8.0 && an < 11.5 && !robot_->bodySensors().empty())
+  {
+    const auto & bs = robot_->bodySensor();
+    const auto & X_0_p = mbc.bodyPosW[static_cast<size_t>(mb.bodyIndexByName(bs.parentBody()))];
+    const Eigen::Matrix3d E_0_s = bs.X_b_s().rotation() * X_0_p.rotation(); // root -> sensor
+    gravity = E_0_s.transpose() * (stateIn_.accIn_ * (9.81 / an));
+  }
+  mbc.gravity = gravity;
+  rbd::ForwardDynamics fd(mb);
+  fd.computeC(mb, mbc); // with zero velocity, C() is the gravity torque vector
+  const Eigen::VectorXd & C = fd.C();
+  g.setZero();
+  for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+  {
+    const int motorId = rjoToMotorId_[i];
+    const int mcJointId = refJointOrderToMCJointId_[i];
+    if (motorId < 0 || mcJointId < 0) continue;
+    g(motorId) = static_cast<float>(C(mb.jointPosInDof(mcJointId)));
+  }
+}
+
+bool mc_unitree::G1Revo2Control::calibrationStep(const Vector41 & q_pos, const Vector41 & q_vel)
+{
+  if (!calibRequested_ || calibDone_) { return false; }
+  if (!calibRunning_)
+  {
+    calib_ = std::make_unique<ActuatorCalibration>(static_cast<double>(control_dt_), motorJointNames, q_lim_lower_, q_lim_upper_, q_init_);
+    Vector41 qNow = q_pos;
+    if (!calib_->start(ActuatorCalibration::filterTable(ActuatorCalibration::defaultTable(), mc_controller_->calibrationSet()), qNow))
+    {
+      mc_rtc::log::error("[calib] could not build the sweep, aborting");
+      calibDone_ = true;
+      return false;
+    }
+    calibRunning_ = true;
+    mc_rtc::log::info("[calib] sweep started ({}): {:.0f} s planned, joints are driven with kp_wait/kd_wait", mc_controller_->calibrationSet(), calib_->planned());
+    // The GUI's "Robots" entry shows mc_rtc's commanded (output) robot, which does not
+    // move during the sweep. Publish the REAL robot under its own category so the
+    // client shows the sweep (mc-rtc-magnum hides robots only under "Robots").
+    {
+      auto & ctl = mc_controller_->controller().controller();
+      ctl.gui()->addElement({"Calibration"},
+                            mc_rtc::gui::Robot("real robot (calibration)",
+                                               [&ctl]() -> const mc_rbdyn::Robot & { return ctl.realRobot(); }));
+    }
+    // mc_rtc runs passively during the sweep with the feet in the air: its balance code
+    // logs a ZMP error every cycle. Mute error/warning output until the sweep is over so
+    // the calibration progress and report stay readable (info/success stay on).
+    calibPrevErrLevel_ = mc_rtc::log::details::cerr().level();
+    mc_rtc::log::details::cerr().set_level(spdlog::level::off);
+  }
+  Vector41 tau = Vector41::Zero(), g = Vector41::Zero();
+  for (size_t i = 0 ; i < robot_->refJointOrder().size() ; ++i)
+  {
+    const int motorId = rjoToMotorId_[i];
+    if (motorId < 0) continue;
+    tau(motorId) = static_cast<float>(stateIn_.tauIn_[i]);
+  }
+  computeGravityTorques(g);
+  calib_->update(q_pos, q_vel, tau, g);
+  calibQRef_ = calib_->qRef();
+  if (!calib_->active())
+  {
+    mc_controller_->controller().controller().gui()->removeCategory({"Calibration"});
+    mc_rtc::log::details::cerr().set_level(calibPrevErrLevel_);
+    calib_->fit();
+    calibRunning_ = false;
+    calibDone_ = true;
+    return false;
+  }
+  return true;
+}
+
+void mc_unitree::G1Revo2Control::calibrationApplyPrompt()
+{
+  if (!calib_) { return; }
+  mc_rtc::log::info("[calib] ---------------- actuator friction identification ----------------\n{}", calib_->report());
+  if (!calib_->identifiedAny())
+  {
+    mc_rtc::log::warning("[calib] no joint identifiable (expected in loopback: torques are zero). Nothing written.");
+    return;
+  }
+  const std::string robotName = mc_controller_->controller().robot().name();
+  const std::string path = (std::filesystem::path(mc_rtc::user_config_directory_path("observers")) / "ExternalForcesObserver" / (robotName + ".yaml")).string();
+  std::cout << calib_->yaml();
+  mc_rtc::log::info("[calib] Write this friction_model to {} (loaded by every controller's ExternalForcesObserver on this robot)? [y/N] ", path);
+  std::string line;
+  std::getline(std::cin, line);
+  if (line.empty() || (line[0] != 'y' && line[0] != 'Y'))
+  {
+    mc_rtc::log::info("[calib] not written");
+    return;
+  }
+  if (!calib_->write(path))
+  {
+    mc_rtc::log::error("[calib] could not write {}", path);
+    return;
+  }
+  mc_rtc::log::success("[calib] written {}", path);
+  auto & ds = mc_controller_->controller().controller().datastore();
+  if (ds.has("EF_Estimator::reloadFrictionModel"))
+  {
+    if (ds.call<bool>("EF_Estimator::reloadFrictionModel"))
+    {
+      mc_rtc::log::success("[calib] observer reloaded the friction model");
+    }
+    else
+    {
+      mc_rtc::log::warning("[calib] observer could not reload the friction model; check the file, it is used from the next start");
+    }
+  }
+  else
+  {
+    mc_rtc::log::warning("[calib] observer reload call not found; the model is used from the next start");
+  }
 }
