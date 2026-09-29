@@ -3,3 +3,6 @@
 
 # cpp
 build
+
+# gui
+imgui.ini
