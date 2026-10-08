@@ -59,7 +59,7 @@ $ ifconfig #if command not found, install it with: sudo apt install net-tools
 ```
 from there note G1 interface name and your host's IP adress. Then set your IP to the same subnet as G1's
 ```
-$ sudo ip addr add <Host-IP-adress>/24 dev <G1-interface-name> 
+$ sudo ip addr add <Host-IP-adress>/24 dev <G1-interface-name> label <G1-interface-name>:g1
 ```
 and verify connectivity
 ```

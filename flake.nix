@@ -113,6 +113,7 @@
 
                 cmakeFlags = [
                   (lib.cmakeBool "GENERATE_G1_CONTROLLER" true)
+                  (lib.cmakeBool "GENERATE_G1_REVO2_CONTROLLER" true)
                   "-DUNITREE_SDK2_SRC_DIR=${unitree-sdk2-examples}/share/unitree_sdk2"
                 ];
 
