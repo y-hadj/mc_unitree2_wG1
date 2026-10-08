@@ -15,9 +15,8 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(unitree_sdk2 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(CLI11 REQUIRED)
+find_package(libfort REQUIRED)
 
-# Import data tamer library
-add_subdirectory(libfort)
 add_subdirectory(src)
 
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/etc/"

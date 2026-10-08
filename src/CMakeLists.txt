@@ -130,6 +130,7 @@ if (GENERATE_G1_CONTROLLER)
     ${G1_SOURCES}
     # CLI11::CLI11
   )
+  target_include_directories(${G1_CONTROLLER_NAME} PRIVATE ${UNITREE_SDK2_SRC_DIR}/example)
   
   target_link_libraries(${G1_CONTROLLER_NAME}
     PUBLIC
