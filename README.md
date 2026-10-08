@@ -1,14 +1,29 @@
 # mc_unitree2
 Interface between [Unitree robots](https://github.com/unitreerobotics/unitree_ros2/tree/master/robots) and [mc_rtc](https://jrl-umi3218.github.io/mc_rtc). Provides connectivity with [Go2](https://www.unitree.com/products/go2/) robots.
 
-## 1. Required dependencies
+There are two options to build:
+- With Nix
+- From source
+
+## Nix
+
+To get started with Nix, use
+
+```
+nix develop .#mc-rtc-superbuild-g1
+```
+
+This puts you in a shell with all dependencies built and installed, and ready to use in simulation / with the real robot.
+
+## From source
+### 1. Required dependencies
 
  - [mc_rtc](https://jrl-umi3218.github.io/mc_rtc/)
  - [unitree_sdk2](https://github.com/unitreerobotics/unitree_sdk2)
 
-## 2. Install dependencies
+### 2. Install dependencies
 
-### unitree_sdk2
+#### unitree_sdk2
  - Install the include files
 ```
 $ git clone https://github.com/y-hadj/unitree_sdk2.git #fork with necessary headers
@@ -16,9 +31,9 @@ $ mkdir build
 $ cmake ..
 $ make ; make install
 ```
-## 3. Install this project
+### 3. Install this project
 
-### Build instructions
+#### Build instructions
 
 ```
 $ cd src
@@ -29,14 +44,14 @@ $ cmake ..
 $ make ; make install
 ```
 
-## 4. Usage
+## Usage
 
-### Configuration
+#### Configuration
 
 There is an example in `etc/` which can be passed as an argument when running the controller to override the default values of this repository.  
 The network interface is loopback ("lo") by default for simulation, but can be replace by your ethernet interface (check `ifconfig`) for deployment.
 
-### Running the program
+#### Running the program
 
 Now, turn on the robot and connect it to your host machine with an ethernet cable then configure the netwrok interface:
 ```

@@ -3,7 +3,7 @@
 # This is an example configuration file
 MainRobot: G1_Revo2 #H1
 
-Enabled: [ismpc_walking,Posture] 
+Enabled: [Posture] 
 
 Log: false
 
@@ -16,7 +16,7 @@ ObserverPipelines:
     - type: Encoder
       velocity: encoderVelocities
     - type: Attitude
-      required: true
+      required: false
       update: true
     - type: ExternalForcesObserver
       estimation_method: MomentumObserver

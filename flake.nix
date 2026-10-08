@@ -46,6 +46,33 @@
       { lib, ... }:
       {
         mc-rtc-nix.overlays.ccache = inputs.ccache-trigger.value;
+
+        mc-rtc-superbuild =
+          { pkgs, ... }:
+          {
+            enable = true;
+            project.pname = "";
+            configurations = {
+              mc-rtc-superbuild-g1 = {
+                extends = [ "minimal" ];
+                runtime = {
+                  apps = [
+                    pkgs.mc-unitree2
+                    pkgs.mc-rtc-magnum # XXX this should be merged automatically from "minimal"
+                  ];
+                  robots = [
+                    pkgs.mc-g1
+                    pkgs.mc-revo2
+                  ];
+                  observers = [
+                    pkgs.mc-external-forces-observer
+                  ];
+                  extraConfigFiles = [ "${pkgs.mc-unitree2}/etc/mc_unitree/mc_rtc_example.yaml" ];
+                };
+              };
+            };
+          };
+
         flakoboros = {
           packages = {
             mc-unitree2 =
@@ -178,6 +205,104 @@
                   platforms = platforms.all;
                 };
               };
+            mc-revo2 =
+              {
+                stdenv,
+                lib,
+                fetchFromGitHub,
+                cmake,
+                mc-rtc,
+                revo2-description,
+              }:
+
+              let
+
+                revo2-description' = revo2-description.override {
+                  with-ros = mc-rtc.with-ros;
+                };
+
+              in
+
+              stdenv.mkDerivation {
+                pname = "mc-revo2";
+                version = "1.0.0";
+
+                src = fetchFromGitHub {
+                  owner = "isri-aist";
+                  repo = "mc_revo2";
+                  rev = "d654763f64f329d42707221f24981111fa2abb01";
+                  hash = "sha256-T3ccoyWOhNzEtchV2fLAzNRQMgx/M85laFq5DaOVNfc=";
+                };
+                nativeBuildInputs = [ cmake ];
+                propagatedBuildInputs = [
+                  revo2-description'
+                  mc-rtc
+                ];
+
+                cmakeFlags = [
+                  "-DBUILD_TESTING=OFF"
+                ];
+
+                passthru = {
+                  # TODO
+                  # mujocoRobots = [ "revo2-mj-description" ];
+                };
+
+                doCheck = false;
+
+                meta = with lib; {
+                  description = "revo2 RobotModule for mc-rtc";
+                  homepage = "https://github.com/isri-aist/mc_revo2";
+                  license = licenses.bsd2;
+                  platforms = platforms.all;
+                };
+              };
+
+            revo2-description =
+              {
+                stdenv,
+                lib,
+                fetchFromGitHub,
+                cmake,
+                with-ros ? false,
+                ament-cmake,
+                buildRosPackage,
+              }:
+
+              (if with-ros then buildRosPackage else stdenv.mkDerivation) {
+                pname = "revo2-description";
+                version = "1.0.0";
+                separateDebugInfo = false;
+
+                src = fetchFromGitHub {
+                  owner = "isri-aist";
+                  repo = "revo2_description";
+                  rev = "7b8d7cea3f886f93ae98344766988ac0720125b9";
+                  hash = "sha256-Ui6E6gzYdAutNS6tn+T8UkspkmyTqfFNpzL1s3fVIXA=";
+                };
+
+                buildType = "ament_cmake";
+                nativeBuildInputs = if with-ros then [ ament-cmake ] else [ cmake ];
+                propagatedBuildInputs = [ ];
+
+                preConfigure = ''
+                  export ROS_VERSION=2
+                '';
+
+                cmakeFlags = lib.optional (!with-ros) "-DDISABLE_ROS=ON" ++ [
+                  "-DBUILD_TESTING=OFF"
+                ];
+
+                doCheck = false;
+
+                meta = with lib; {
+                  description = "revo2 urdf and data";
+                  homepage = "https://github.com/isri-aist/revo2_description";
+                  license = licenses.bsd2;
+                  platforms = platforms.all;
+                };
+              };
+            # };
           };
           overrideAttrs.mc-unitree2 = {
             src = lib.cleanSource ./.;
