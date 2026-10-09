@@ -2,10 +2,11 @@
 # Interface specific parameters (mc_unitree2)
 # This is an example configuration file
 MainRobot: G1_Revo2 #H1
+# MainRobot: G1_29dof #H1
 
-Enabled: [Posture] 
+Enabled: [CoM]
 
-Log: false
+Log: true
 
 
 ObserverPipelines:
@@ -62,12 +63,92 @@ ObserverPipelines:
 Unitree:
   g1_29dof_revo2:
     network-interface: lo
+    # left_hip_pitch_joint  left_hip_roll_joint  left_hip_yaw_joint
+    # left_knee_joint
+    # left_ankle_pitch_joint  left_ankle_roll_joint
+    # right_hip_pitch_joint  right_hip_roll_joint  right_hip_yaw_joint
+    # right_knee_joint
+    # right_ankle_pitch_joint  right_ankle_roll_joint  waist_yaw_joint
+    # waist_roll_joint  waist_pitch_joint
+    # left_shoulder_pitch_joint  left_shoulder_roll_joint  left_shoulder_yaw_joint
+    # left_elbow_joint
+    # left_wrist_roll_joint  left_wrist_pitch_joint  left_wrist_yaw_joint
+    # right_shoulder_pitch_joint  right_shoulder_roll_joint  right_shoulder_yaw_joint
+    # right_elbow_joint
+    # right_wrist_roll_joint  right_wrist_pitch_joint  right_wrist_yaw_joint
+    kp:
+      - 600.0  # Left Hip Pitch
+      - 700.0  # Left Hip Roll
+      - 500.0  # Left Hip Yaw
+      - 1000.0 # Left Knee
+      - 900.0  # Left Ankle Pitch
+      - 500.0  # Left Ankle Roll
+      - 600.0  # Right Hip Pitch
+      - 700.0  # Right Hip Roll
+      - 500.0  # Right Hip Yaw
+      - 1000.0 # Right Knee
+      - 900.0  # Right Ankle Pitch
+      - 500.0  # Right Ankle Roll
+      - 400.0  # Waist Yaw
+      - 400.0  # Waist Roll
+      - 400.0  # Waist Pitch
+      - 100.0  # Left Shoulder Pitch
+      - 100.0  # Left Shoulder Roll
+      - 50.0   # Left Shoulder Yaw
+      - 50.0   # Left Elbow
+      - 20.0   # Left Wrist Roll
+      - 20.0   # Left Wrist Pitch
+      - 20.0   # Left Wrist Yaw
+      - 100.0  # Right Shoulder Pitch
+      - 100.0  # Right Shoulder Roll
+      - 50.0   # Right Shoulder Yaw
+      - 50.0   # Right Elbow
+      - 20.0   # Right Wrist Roll
+      - 20.0   # Right Wrist Pitch
+      - 20.0   # Right Wrist Yaw
+
+    kd:
+      - 10.0 # Left Hip Pitch
+      - 10.0 # Left Hip Roll
+      - 10.0 # Left Hip Yaw
+      - 10.0 # Left Knee
+      - 10.0 # Left Ankle Pitch
+      - 10.0 # Left Ankle Roll
+      - 10.0 # Right Hip Pitch
+      - 10.0 # Right Hip Roll
+      - 10.0 # Right Hip Yaw
+      - 10.0 # Right Knee
+      - 10.0 # Right Ankle Pitch
+      - 10.0 # Right Ankle Roll
+      - 10.0 # Waist Yaw
+      - 10.0 # Waist Roll
+      - 10.0 # Waist Pitch
+      - 2.0  # Left Shoulder Pitch
+      - 2.0  # Left Shoulder Roll
+      - 2.0  # Left Shoulder Yaw
+      - 2.0  # Left Elbow
+      - 1.0  # Left Wrist Roll
+      - 1.0  # Left Wrist Pitch
+      - 1.0  # Left Wrist Yaw
+      - 2.0  # Right Shoulder Pitch
+      - 2.0  # Right Shoulder Roll
+      - 2.0  # Right Shoulder Yaw
+      - 2.0  # Right Elbow
+      - 1.0  # Right Wrist Roll
+      - 1.0  # Right Wrist Pitch
+      - 1.0  # Right Wrist Yaw
 
   g1_29dof:
     network-interface: lo
-    
+
   h1:
     network-interface: lo
+
+      # "left_hip_yaw_joint",        "left_hip_roll_joint",      "left_hip_pitch_joint", "left_knee_joint",
+      # "left_ankle_joint",          "right_hip_yaw_joint",      "right_hip_roll_joint", "right_hip_pitch_joint",
+      # "right_knee_joint",          "right_ankle_joint",        "torso_joint",          "left_shoulder_pitch_joint",
+      # "left_shoulder_roll_joint",  "left_shoulder_yaw_joint",  "left_elbow_joint",     "right_shoulder_pitch_joint",
+      # "right_shoulder_roll_joint", "right_shoulder_yaw_joint", "right_elbow_joint"};
 
     kp: [1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
          1500.0, 1500.0, 1500.0, 1500.0, 1500.0,
@@ -88,7 +169,7 @@ Unitree:
               25.0, 25.0, 25.0, 25.0, 25.0,
                6.0,  2.0,  2.0,  2.0,  2.0,
                2.0,  2.0,  2.0,  2.0,  0.0]
-    
+
   go2:
     network-interface: lo
 
