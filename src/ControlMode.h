@@ -3,28 +3,18 @@
 #include <mc_rtc/Configuration.h>
 #include <mc_rtc/logging.h>
 
-namespace mc_unitree
-{
+namespace mc_unitree {
 
-enum class ControlMode
-{
-  Position,
-  Velocity,
-  Torque
-};
+enum class ControlMode { Position, Velocity, Torque };
 }
 
-namespace mc_rtc
-{
+namespace mc_rtc {
 
-template<>
-struct ConfigurationLoader<mc_unitree::ControlMode>
-{
-  static Configuration save(const mc_unitree::ControlMode & mode)
-  {
+template <>
+struct ConfigurationLoader<mc_unitree::ControlMode> {
+  static Configuration save(const mc_unitree::ControlMode& mode) {
     Configuration c;
-    switch(mode)
-    {
+    switch (mode) {
       case mc_unitree::ControlMode::Position:
         c.add("mode", "Position");
         break;
@@ -35,28 +25,26 @@ struct ConfigurationLoader<mc_unitree::ControlMode>
         c.add("mode", "Torque");
         break;
       default:
-        log::error_and_throw<std::runtime_error>("ControlMode has unexpected value");
+        log::error_and_throw<std::runtime_error>(
+            "ControlMode has unexpected value");
     }
     return c("mode");
   }
 
-  static mc_unitree::ControlMode load(const Configuration & conf)
-  {
+  static mc_unitree::ControlMode load(const Configuration& conf) {
     std::string mode = conf;
-    if(mode == "Position")
-    {
+    if (mode == "Position") {
       return mc_unitree::ControlMode::Position;
     }
-    if(mode == "Velocity")
-    {
+    if (mode == "Velocity") {
       return mc_unitree::ControlMode::Velocity;
     }
-    if(mode == "Torque")
-    {
+    if (mode == "Torque") {
       return mc_unitree::ControlMode::Torque;
     }
-    log::error_and_throw<std::runtime_error>("ControlMode has unexpected value {}", mode);
+    log::error_and_throw<std::runtime_error>(
+        "ControlMode has unexpected value {}", mode);
   }
 };
 
-} // namespace mc_rtc
+}  // namespace mc_rtc

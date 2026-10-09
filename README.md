@@ -48,7 +48,7 @@ $ make ; make install
 
 #### Configuration
 
-There is an example in `etc/` which can be passed as an argument when running the controller to override the default values of this repository.  
+There is an example in `etc/` which can be passed as an argument when running the controller to override the default values of this repository.
 The network interface is loopback ("lo") by default for simulation, but can be replace by your ethernet interface (check `ifconfig`) for deployment.
 
 #### Running the program
@@ -84,7 +84,7 @@ $ MCControlG1 --conf ~/superbuild/install/etc/mc_unitree/mc_rtc_example.yaml --n
 <ins>PS.</ins> You can also manually configure the network by setting the IPv4 protocol's adress to <Host-IP-adress> and netmask to 255.255.255.0
 
 ### Adding support for Brainco Revo2 Hands
-Brainco Revo2 hands are connected to the G1 robot by default, this means we have to SSH into the robot's Jeston Orin and install brainco_hand_service which is a bridge between the Serial/CAN protocols of the Revo2 hands to DDS for easy unitree manipulation. 
+Brainco Revo2 hands are connected to the G1 robot by default, this means we have to SSH into the robot's Jeston Orin and install brainco_hand_service which is a bridge between the Serial/CAN protocols of the Revo2 hands to DDS for easy unitree manipulation.
 ```bash
 ssh unitree@192.168.123.164	#pwd is 123
 ```
@@ -97,7 +97,7 @@ git clone https://github.com/unitreerobotics/unitree_sdk2.git
 tar czf unitree_sdk2.tar.gz unitree_sdk2
 scp unitree_sdk2.tar.gz unitree@192.168.123.164:~/
 
-#2) clone brainco_hand_service 
+#2) clone brainco_hand_service
 git clone --recursive https://github.com/unitreerobotics/brainco_hand_service.git
 tar czf brainco_hand_service.tar.gz brainco_hand_service
 scp brainco_hand_service.tar.gz unitree@192.168.123.164:~/
@@ -134,12 +134,12 @@ and the hands should show a variety of gripping motions, which confirms they wor
 ```bash
 #on the devcontainer
 cd ~/superbuild/mc-rtc-superbuild-G1-Manipulation/build
-cmake .. && cmake --build . --target mc_unitree2 
+cmake .. && cmake --build . --target mc_unitree2
 MCControlG1Revo2 --conf ~/superbuild/install/etc/mc_unitree/mc_rtc_example.yaml --network <G1-interface-name>
 ```
 
 
-<ins>PS.</ins> If libfmt dev library is missing, download it 
+<ins>PS.</ins> If libfmt dev library is missing, download it
 ```bash
 #on your host machine
 wget http://ports.ubuntu.com/pool/universe/f/fmtlib/libfmt-dev_8.1.1+ds1-2_arm64.deb	#depends on the sys architecture, here is ARM64

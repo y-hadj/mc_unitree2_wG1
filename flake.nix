@@ -16,14 +16,21 @@
     g1-description.url = "github:isri-aist/g1_description/pull/2/head";
     g1-description.flake = false;
 
-    mc-g1.url = "github:isri-aist/mc_g1/pull/2/head";
+    # mc-g1.url = "github:isri-aist/mc_g1/pull/2/head";
+    mc-g1.url = "github:y-hadj/mc_g1"; # same as isiri-aist/mc_g1/pull/2 but with force sensors for external force estimation
     mc-g1.flake = false;
+
+    revo2-description.url = "github:isri-aist/revo2_description";
+    revo2-description.flake = false;
 
     unitree-sdk2.url = "github:y-hadj/unitree_sdk2";
     unitree-sdk2.flake = false;
 
     mc-external-forces-observer.url = "github:y-hadj/mc_external_forces_observer";
     mc-external-forces-observer.flake = false;
+
+    libfort.url = "github:seleznevae/libfort";
+    libfort.flake = false;
   };
 
   outputs =
@@ -182,6 +189,7 @@
                 lib,
                 fetchFromGitHub,
                 cmake,
+                glibcLocales,
               }:
 
               stdenv.mkDerivation {
@@ -195,10 +203,16 @@
                   hash = "sha256-UHDApOTrPNb3e5qoWqsTcx16/rV0nO/Zn4DNH9bEJY0=";
                 };
 
-                nativeBuildInputs = [ cmake ];
-                doCheck = false; # tests fail
+                nativeBuildInputs = [
+                  cmake
+                  glibcLocales
+                ];
+                doCheck = true; # tests fail
+                checkPhase = ''
+                  export LC_ALL=en_US.UTF-8
+                  ctest --output-on-failure
+                '';
 
-                patches = [ ./patches/fix-libfort-pc.patch ];
                 meta = with lib; {
                   description = "C/C++ library to create formatted ASCII tables for console applications";
                   homepage = "https://github.com/seleznevae/libfort";
@@ -316,6 +330,12 @@
           };
           overrideAttrs.g1-description = {
             src = inputs.g1-description;
+          };
+          overrideAttrs.libfort = {
+            src = inputs.libfort;
+          };
+          overrideAttrs.revo2-description = {
+            src = inputs.revo2-description;
           };
         };
       }

@@ -19,7 +19,9 @@ find_package(libfort REQUIRED)
 
 add_subdirectory(src)
 
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/etc/"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/etc/mc_unitree"
-        FILES_MATCHING
-        PATTERN "*.yaml")
+install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/etc/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/etc/mc_unitree"
+    FILES_MATCHING
+    PATTERN "*.yaml"
+)

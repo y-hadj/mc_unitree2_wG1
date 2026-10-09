@@ -362,6 +362,22 @@
         "type": "github"
       }
     },
+    "libfort": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791546909,
+        "narHash": "sha256-BtezW2cWiSrm8luZHd+fFZpXpjGp5KXxgqFpljMys9A=",
+        "owner": "seleznevae",
+        "repo": "libfort",
+        "rev": "0d16bee7eca0e25f4fca82e4d06249b28fd09359",
+        "type": "github"
+      },
+      "original": {
+        "owner": "seleznevae",
+        "repo": "libfort",
+        "type": "github"
+      }
+    },
     "make-shell": {
       "inputs": {
         "flake-compat": "flake-compat_2"
@@ -399,16 +415,15 @@
     "mc-g1": {
       "flake": false,
       "locked": {
-        "lastModified": 1791002952,
-        "narHash": "sha256-DKCROjaIYqhq2JYhL5a9ZiMjpx43LfMbiYDBlLcqzGU=",
-        "owner": "isri-aist",
+        "lastModified": 1790677625,
+        "narHash": "sha256-6bxir2/46XGAPFNag0Hs2JuOTZc5dN4GLyh8sbN5GO8=",
+        "owner": "y-hadj",
         "repo": "mc_g1",
-        "rev": "21ddf413b643094ab21c43b0bbef0f2be42237c2",
+        "rev": "0ef7ee201652d5588f18b409b6af9d346f146211",
         "type": "github"
       },
       "original": {
-        "owner": "isri-aist",
-        "ref": "pull/2/head",
+        "owner": "y-hadj",
         "repo": "mc_g1",
         "type": "github"
       }
@@ -594,6 +609,22 @@
         "type": "github"
       }
     },
+    "revo2-description": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791526426,
+        "narHash": "sha256-nu6/hSGSDSmddefBGHyykGhMsHCp27+7IPN9eBI4irI=",
+        "owner": "isri-aist",
+        "repo": "revo2_description",
+        "rev": "2ab44e304b0898ce34e8d1128cafdf445d167c52",
+        "type": "github"
+      },
+      "original": {
+        "owner": "isri-aist",
+        "repo": "revo2_description",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "ccache-trigger": "ccache-trigger",
@@ -602,9 +633,11 @@
           "flake-parts"
         ],
         "g1-description": "g1-description",
+        "libfort": "libfort",
         "mc-external-forces-observer": "mc-external-forces-observer",
         "mc-g1": "mc-g1",
         "mc-rtc-nix": "mc-rtc-nix",
+        "revo2-description": "revo2-description",
         "systems": [
           "mc-rtc-nix",
           "systems"
