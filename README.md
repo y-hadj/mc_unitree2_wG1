@@ -69,7 +69,14 @@ Now, launch with loopback to make sure the passed configuration file loads witho
 ```
 $ MCControlG1 --conf ~/superbuild/install/etc/mc_unitree/mc_rtc_example.yaml --network lo
 ```
-then press enter to transit from each state shown in the terminal accordingly. If loopback is clean on mc-rtc-magnum with no task errors, send the commands to the robot
+then press enter to transit from each state shown in the terminal accordingly. If loopback is clean on mc-rtc-magnum with no task errors, send the commands to the robot:
+
+Put the robot in development mode :
+- Damping Mode L2+B
+- Development Mode L2+R2
+
+Then
+
 ```
 $ MCControlG1 --conf ~/superbuild/install/etc/mc_unitree/mc_rtc_example.yaml --network <G1-interface-name>
 ```
